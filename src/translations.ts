@@ -181,6 +181,6 @@ export const translations = {
     auditLogs: 'Kumbukumbu',
     settings: 'Mipangilio',
     logout: 'Ondoka',
-    demoModeBadge: 'HALI YA MAJARIBIO (DEMO)',
+    
   }
 };
