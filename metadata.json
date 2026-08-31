@@ -1,0 +1,8 @@
+{
+  "name": "HotspotTZ - Automatic Wi-Fi Hotspot System",
+  "description": "Production-ready automated time-based Wi-Fi hotspot management system with mobile payment gateway (TZS), cash vouchers, and MikroTik RB941 router controller.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
