@@ -71,7 +71,7 @@ export const MikroTikView: React.FC = () => {
     password: '',
     serverName: 'hotspot-site',
     notes: '',
-    isDemoMode: true,
+    isDemoMode: false,
   });
 
   // Edit Router State

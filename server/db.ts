@@ -66,7 +66,7 @@ class DatabaseStore {
         username: process.env.MIKROTIK_USERNAME || 'admin',
         passwordMasked: '••••••••',
         enabled: true,
-        demoMode: true,
+        demoMode: false,
       },
     };
 
@@ -74,135 +74,45 @@ class DatabaseStore {
   }
 
   private seedInitialData() {
-    // 0. Multi-Site MikroTik Routers & Connected Access Points
+    // 0. Primary MikroTik RB941 Router Structure (Fresh / Live state with 0 baseline revenue & users)
     const initialRouters: MikroTikRouter[] = [
       {
         id: 'router-001',
-        name: 'Site 1 - Kariakoo Central Hub',
-        location: 'Kariakoo Market, Dar es Salaam',
-        siteCode: 'TZ-KK-01',
+        name: 'Site 1 - MikroTik RB941 Hub',
+        location: 'Main Location, Dar es Salaam',
+        siteCode: 'TZ-SITE-01',
         model: 'MikroTik RB941-2nD (hAP lite)',
-        host: '192.168.88.1',
+        host: process.env.MIKROTIK_HOST || '192.168.88.1',
         apiPort: 8728,
-        username: 'admin',
+        username: process.env.MIKROTIK_USERNAME || 'admin',
         passwordMasked: '••••••••',
-        serverName: 'hotspot-kariakoo',
+        serverName: 'hotspot1',
         status: 'connected',
         lastChecked: new Date().toISOString(),
-        uptime: '14d 08:22:15',
-        cpuLoad: 12,
-        memoryFreeMb: 24.5,
+        uptime: 'Live',
+        cpuLoad: 2,
+        memoryFreeMb: 24.0,
         totalMemoryMb: 32.0,
-        activeUsersCount: 18,
-        isDemoMode: true,
-        totalRevenueTzs: 145000,
-        totalTransactionsCount: 112,
-        notes: 'Primary hub covering main marketplace stalls and waiting lounge.',
+        activeUsersCount: 0,
+        isDemoMode: false,
+        totalRevenueTzs: 0,
+        totalTransactionsCount: 0,
+        notes: 'Primary Hotspot Gateway Router.',
         accessPoints: [
           {
             id: 'ap-001',
-            name: 'AP1 - Ground Floor Hall',
-            locationArea: 'Entrance & Waiting Lounge',
-            brand: 'MikroTik cAP',
+            name: 'WLAN 1 - Internal AP',
+            locationArea: 'Main Coverage Area',
+            brand: 'MikroTik Built-in',
             status: 'online',
-            connectedClients: 11,
-          },
-          {
-            id: 'ap-002',
-            name: 'AP2 - Upper Shopping Deck',
-            locationArea: 'Mezzanine Stalls',
-            brand: 'Ubiquiti UniFi',
-            status: 'online',
-            connectedClients: 7,
-          },
-        ],
-      },
-      {
-        id: 'router-002',
-        name: 'Site 2 - Mlimani City Branch',
-        location: 'Mwenge / Mlimani, Dar es Salaam',
-        siteCode: 'TZ-MC-02',
-        model: 'MikroTik hEX RB750Gr3',
-        host: '192.168.89.1',
-        apiPort: 8728,
-        username: 'admin',
-        passwordMasked: '••••••••',
-        serverName: 'hotspot-mlimani',
-        status: 'connected',
-        lastChecked: new Date().toISOString(),
-        uptime: '28d 14:10:02',
-        cpuLoad: 6,
-        memoryFreeMb: 215.0,
-        totalMemoryMb: 256.0,
-        activeUsersCount: 34,
-        isDemoMode: true,
-        totalRevenueTzs: 285000,
-        totalTransactionsCount: 198,
-        notes: 'High-traffic shopping wing and food court connection point.',
-        accessPoints: [
-          {
-            id: 'ap-003',
-            name: 'AP1 - Food Court Wing',
-            locationArea: 'Dining & Seating Area',
-            brand: 'Ubiquiti UniFi',
-            status: 'online',
-            connectedClients: 22,
-          },
-          {
-            id: 'ap-004',
-            name: 'AP2 - West Arcade',
-            locationArea: 'Walkway & Parking View',
-            brand: 'Ruijie Reyee',
-            status: 'online',
-            connectedClients: 12,
-          },
-        ],
-      },
-      {
-        id: 'router-003',
-        name: 'Site 3 - Sinza Lounge & Cafe',
-        location: 'Sinza Mori, Dar es Salaam',
-        siteCode: 'TZ-SZ-03',
-        model: 'MikroTik RB951Ui-2HnD',
-        host: '192.168.90.1',
-        apiPort: 8728,
-        username: 'admin',
-        passwordMasked: '••••••••',
-        serverName: 'hotspot-sinza',
-        status: 'connected',
-        lastChecked: new Date().toISOString(),
-        uptime: '7d 02:44:19',
-        cpuLoad: 18,
-        memoryFreeMb: 94.0,
-        totalMemoryMb: 128.0,
-        activeUsersCount: 14,
-        isDemoMode: true,
-        totalRevenueTzs: 92000,
-        totalTransactionsCount: 76,
-        notes: 'Cafe patrons and evening outdoor seating patio.',
-        accessPoints: [
-          {
-            id: 'ap-005',
-            name: 'AP1 - Indoor Lounge',
-            locationArea: 'VIP Coffee Bar',
-            brand: 'TP-Link Omada',
-            status: 'online',
-            connectedClients: 9,
-          },
-          {
-            id: 'ap-006',
-            name: 'AP2 - Garden Terrace',
-            locationArea: 'Outdoor Patio',
-            brand: 'MikroTik cAP',
-            status: 'online',
-            connectedClients: 5,
+            connectedClients: 0,
           },
         ],
       },
     ];
 
     initialRouters.forEach((r) => this.routers.set(r.id, r));
-    // 1. Initial Packages (All 100% Time-Based, TZS Currency)
+    // 1. Time-Based Packages (Production Tanzanian Shillings TZS)
     const initialPackages: TimePackage[] = [
       {
         id: 'pkg-1h',
@@ -214,8 +124,8 @@ class DatabaseStore {
         description: 'Instant 1-hour fast internet. Perfect for quick browsing and messaging.',
         status: 'active',
         popular: false,
-        createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
       {
         id: 'pkg-3h',
@@ -227,8 +137,8 @@ class DatabaseStore {
         description: '3 hours of continuous connection. Ideal for research and streaming.',
         status: 'active',
         popular: true,
-        createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
       {
         id: 'pkg-6h',
@@ -240,8 +150,8 @@ class DatabaseStore {
         description: '6 hours daytime or evening access with seamless reconnect.',
         status: 'active',
         popular: false,
-        createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
       {
         id: 'pkg-12h',
@@ -253,8 +163,8 @@ class DatabaseStore {
         description: 'Half day full coverage for study or remote work sessions.',
         status: 'active',
         popular: false,
-        createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
       {
         id: 'pkg-24h',
@@ -266,8 +176,8 @@ class DatabaseStore {
         description: 'Full 24-hour day access without interruptions.',
         status: 'active',
         popular: true,
-        createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
       {
         id: 'pkg-7d',
@@ -279,108 +189,32 @@ class DatabaseStore {
         description: '7 full consecutive days of high-speed Wi-Fi hotspot access.',
         status: 'active',
         popular: false,
-        createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     ];
 
     initialPackages.forEach((pkg) => this.packages.set(pkg.id, pkg));
 
-    // 2. Initial Sample Cash Vouchers for testing
-    const sampleVouchers: Voucher[] = [
-      {
-        id: 'vch-001',
-        code: 'TZ-941-8X2A',
-        packageId: 'pkg-3h',
-        packageName: '3 Hours Access',
-        durationMinutes: 180,
-        priceTzs: 500,
-        status: 'available',
-        createdBy: 'admin@hotspottz.co.tz',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        id: 'vch-002',
-        code: 'TZ-941-4K9P',
-        packageId: 'pkg-1h',
-        packageName: '1 Hour Access',
-        durationMinutes: 60,
-        priceTzs: 300,
-        status: 'available',
-        createdBy: 'admin@hotspottz.co.tz',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        id: 'vch-003',
-        code: 'TZ-941-1M7Q',
-        packageId: 'pkg-24h',
-        packageName: '24 Hours (1 Day)',
-        durationMinutes: 1440,
-        priceTzs: 2000,
-        status: 'available',
-        createdBy: 'admin@hotspottz.co.tz',
-        createdAt: new Date(Date.now() - 7200000).toISOString(),
-      },
-      {
-        id: 'vch-004',
-        code: 'TZ-941-USED1',
-        packageId: 'pkg-3h',
-        packageName: '3 Hours Access',
-        durationMinutes: 180,
-        priceTzs: 500,
-        status: 'used',
-        createdBy: 'admin@hotspottz.co.tz',
-        createdAt: new Date(Date.now() - 86400000).toISOString(),
-        usedAt: new Date(Date.now() - 40000000).toISOString(),
-        usedByPhone: '0754889900',
-        usedByMac: 'D4:CA:6D:88:12:44',
-      },
-    ];
-
-    sampleVouchers.forEach((vch) => this.vouchers.set(vch.id, vch));
-
-    // 3. Initial Admins
+    // 2. Fresh Database: No fake vouchers, fake transactions, or fake customers
+    // 3. Super Admin Profile
     const superAdmin: AdminUser = {
       id: 'adm-001',
-      name: 'Yohana Michael (Chief Admin)',
+      name: 'Yohana Michael',
       email: 'yohanamichael92@gmail.com',
       role: 'SUPER_ADMIN',
       status: 'active',
-      createdAt: new Date(Date.now() - 60 * 86400000).toISOString(),
+      createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString(),
     };
-    const fallbackAdmin: AdminUser = {
-      id: 'adm-002',
-      name: 'Network Attendant',
-      email: 'admin@hotspottz.co.tz',
-      role: 'ADMIN',
-      status: 'active',
-      createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
-      lastLogin: new Date(Date.now() - 3600000).toISOString(),
-    };
     this.admins.set(superAdmin.id, superAdmin);
-    this.admins.set(fallbackAdmin.id, fallbackAdmin);
 
-    // 4. Sample Customers
-    const sampleCustomer: Customer = {
-      id: 'cust-0754889900',
-      phoneNumber: '0754889900',
-      macAddress: 'D4:CA:6D:88:12:44',
-      lastIp: '192.168.88.245',
-      totalSpentTzs: 4500,
-      totalSessions: 5,
-      status: 'active',
-      firstSeen: new Date(Date.now() - 15 * 86400000).toISOString(),
-      lastSeen: new Date().toISOString(),
-    };
-    this.customers.set(sampleCustomer.id, sampleCustomer);
-
-    // 5. Initial Audit Log
+    // 4. Initial Audit Log
     this.auditLogs.push({
       id: 'aud-001',
-      adminEmail: 'admin@hotspottz.co.tz',
+      adminEmail: 'yohanamichael92@gmail.com',
       action: 'SYSTEM_BOOT',
-      description: 'HotspotTZ Core Service initialized with MikroTik RB941 Driver.',
+      description: 'HotspotTZ Production Controller initialized.',
       timestamp: new Date().toISOString(),
     });
   }

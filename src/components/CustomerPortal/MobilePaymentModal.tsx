@@ -246,25 +246,6 @@ export const MobilePaymentModal: React.FC<MobilePaymentModalProps> = ({
               </div>
             </div>
 
-            {/* Sandbox Quick Simulator trigger */}
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-left space-y-2">
-              <div className="flex items-center justify-between text-[11px] font-bold text-amber-900">
-                <span>SIMULATION & TEST HELPER</span>
-                <span className="px-1.5 py-0.5 bg-amber-200 text-amber-800 rounded text-[9px]">SANDBOX</span>
-              </div>
-              <p className="text-[11px] text-amber-800 leading-tight">
-                In sandbox mode without live telecom networks, click below to simulate the customer entering their PIN and the gateway webhook verifying the transaction.
-              </p>
-              <button
-                type="button"
-                onClick={handleSimulatePaymentApproval}
-                className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs"
-                id="btn-simulate-gateway-approval"
-              >
-                Approve Payment via Gateway Webhook (Sandbox)
-              </button>
-            </div>
-
             <div className="pt-2">
               <button
                 type="button"

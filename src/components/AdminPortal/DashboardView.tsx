@@ -57,18 +57,18 @@ export const DashboardView: React.FC = () => {
         setStats(statsData);
       } else {
         setStats({
-          totalCustomers: 142,
-          activeCustomers: 18,
-          onlineCustomers: 14,
-          todaySalesCount: 35,
-          todayRevenueTzs: 45800,
-          monthlyRevenueTzs: 840000,
-          activePackagesCount: 5,
-          availableVouchersCount: 88,
-          usedVouchersCount: 142,
-          totalVoucherValueTzs: 460000,
-          usedVoucherValueTzs: 284000,
-          unusedVoucherValueTzs: 176000,
+          totalCustomers: 0,
+          activeCustomers: 0,
+          onlineCustomers: 0,
+          todaySalesCount: 0,
+          todayRevenueTzs: 0,
+          monthlyRevenueTzs: 0,
+          activePackagesCount: 0,
+          availableVouchersCount: 0,
+          usedVouchersCount: 0,
+          totalVoucherValueTzs: 0,
+          usedVoucherValueTzs: 0,
+          unusedVoucherValueTzs: 0,
           mikrotikStatus: 'connected',
         });
       }
@@ -83,30 +83,12 @@ export const DashboardView: React.FC = () => {
         setAnalytics(analyticsData);
       } else {
         setAnalytics({
-          dailyRevenue: [
-            { date: 'Mon', revenue: 24000, salesCount: 18 },
-            { date: 'Tue', revenue: 31500, salesCount: 24 },
-            { date: 'Wed', revenue: 28000, salesCount: 21 },
-            { date: 'Thu', revenue: 42000, salesCount: 32 },
-            { date: 'Fri', revenue: 56000, salesCount: 40 },
-            { date: 'Sat', revenue: 68500, salesCount: 49 },
-            { date: 'Sun', revenue: 45800, salesCount: 35 },
+          dailyRevenue: [],
+          packageSales: [],
+          paymentMethods: [
+            { name: 'Lipa Kwa Simu (Mobile Money)', value: 0, color: '#0ea5e9' },
+            { name: 'Lipa Cash (Vouchers)', value: 0, color: '#10b981' },
           ],
-          paymentBreakdown: [
-            { name: 'M-Pesa (Vodacom)', count: 98, amount: 142000, color: '#e60000' },
-            { name: 'Tigo Pesa', count: 64, amount: 88500, color: '#0033a0' },
-            { name: 'Airtel Money', count: 42, amount: 56000, color: '#ff0000' },
-            { name: 'HaloPesa', count: 18, amount: 24000, color: '#f7941d' },
-            { name: 'Cash Vouchers', count: 85, amount: 125000, color: '#0f172a' },
-          ],
-          packagePopularity: [
-            { name: '3 Hours', count: 110, revenue: 55000 },
-            { name: '1 Hour', count: 92, revenue: 27600 },
-            { name: '24 Hours', count: 65, revenue: 130000 },
-            { name: '12 Hours', count: 32, revenue: 32000 },
-            { name: '7 Days', count: 14, revenue: 140000 },
-          ],
-          recentTransactions: [],
         });
       }
     } catch (err) {

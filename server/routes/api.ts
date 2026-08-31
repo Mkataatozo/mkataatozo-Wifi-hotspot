@@ -593,7 +593,7 @@ apiRouter.post('/admin/login', (req: Request, res: Response) => {
   }
 
   res.status(401).json({
-    error: 'Invalid credentials. Please use: yohanamichael92@gmail.com / Nrf5sz@.',
+    error: 'Invalid email or password. Access denied.',
   });
 });
 
@@ -630,12 +630,6 @@ apiRouter.get('/admin/analytics', (req: Request, res: Response) => {
       }
     }
 
-    // Include baseline realistic distribution for demo visualization if empty
-    if (revenue === 0) {
-      revenue = [18500, 24000, 19500, 31000, 28000, 38500, 42000][6 - i];
-      transactions = [12, 16, 14, 21, 18, 25, 29][6 - i];
-    }
-
     dailyData.push({ date: dayStr, revenue, transactions });
   }
 
@@ -668,8 +662,8 @@ apiRouter.get('/admin/analytics', (req: Request, res: Response) => {
     dailyRevenue: dailyData,
     packageSales: Object.values(packageSales),
     paymentMethods: [
-      { name: 'Lipa Kwa Simu (Mobile Money)', value: mobileMoneyTzs || 85000, color: '#0ea5e9' },
-      { name: 'Lipa Cash (Vouchers)', value: cashVouchersTzs || 35000, color: '#10b981' },
+      { name: 'Lipa Kwa Simu (Mobile Money)', value: mobileMoneyTzs, color: '#0ea5e9' },
+      { name: 'Lipa Cash (Vouchers)', value: cashVouchersTzs, color: '#10b981' },
     ],
   });
 });
