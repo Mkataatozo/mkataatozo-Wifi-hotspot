@@ -178,14 +178,20 @@ export class PlusPesaProvider implements PaymentProvider {
         'X-Secret-Key': secretKey,
       };
 
-      const res = await fetch(`${baseUrl}/collections/${encodeURIComponent(gatewayTxId)}/status`, { headers });
-      const parsed: any = await res.json().catch(() => null);
+      const statusUrl = `${baseUrl}/collections/${encodeURIComponent(gatewayTxId)}/status`;
+      const res = await fetch(statusUrl, { headers });
+      const text = await res.text();
+      let parsed: any = null;
+      try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+
+      console.log(`[PlusPesa StatusCheck] ${statusUrl} -> HTTP ${res.status}:`, text.substring(0, 500));
 
       if (res.ok && parsed?.success && parsed?.data) {
         const data = parsed.data;
         let status: 'pending' | 'successful' | 'failed' | 'cancelled' = 'pending';
         if (data.status === 'success') status = 'successful';
         else if (data.status === 'failed') status = 'failed';
+        else if (data.status === 'cancelled') status = 'cancelled';
 
         return {
           success: true,
@@ -195,9 +201,11 @@ export class PlusPesaProvider implements PaymentProvider {
           paidAt: data.updated_at || new Date().toISOString(),
           rawResponse: data,
         };
+      } else {
+        console.warn(`[PlusPesa StatusCheck] Unrecognized response shape for ${gatewayTxId}. Full body:`, text);
       }
-    } catch {
-      // fall through to pending
+    } catch (err) {
+      console.error(`[PlusPesa StatusCheck] Request failed for ${gatewayTxId}:`, err);
     }
 
     return { success: true, status: 'pending', amountTzs: 0 };
