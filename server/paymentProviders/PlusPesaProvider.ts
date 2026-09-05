@@ -1,269 +1,162 @@
 import { PaymentProvider, PaymentInitiateRequest, PaymentInitiateResponse, PaymentStatusResponse, WebhookResult, PaymentProviderConfig } from './PaymentProvider.js';
+import crypto from 'crypto';
 
 /**
  * PlusPesa Payment Gateway Provider (admin.pluspesa.com)
- * Pure API-Key driven Tanzania Mobile Money Integration (M-Pesa, Tigo Pesa, Airtel Money, HaloPesa)
- * No merchant ID or webhook URL required - uses API Key authentication and polling status verification.
+ * Runs on the "Dalipay" Collections & Disbursements API.
+ * Auth: X-Public-Key / X-Secret-Key headers.
+ * Base URL: https://admin.pluspesa.com/api/v1
+ * Docs confirmed from the official Dalipay Python SDK source (Neurotech-HQ/dalipay-python-sdk).
  */
 export class PlusPesaProvider implements PaymentProvider {
   readonly id = 'pluspesa';
-  readonly name = 'PlusPesa (admin.pluspesa.com)';
+  readonly name = 'PlusPesa (app.pluspesa.com)';
 
   private normalizePhone(phone: string): { international: string; local: string } {
     let clean = phone.replace(/\D/g, '');
     if (clean.startsWith('0')) {
-      return {
-        international: '255' + clean.substring(1),
-        local: clean,
-      };
+      return { international: '255' + clean.substring(1), local: clean };
     } else if (clean.startsWith('255')) {
-      return {
-        international: clean,
-        local: '0' + clean.substring(3),
-      };
+      return { international: clean, local: '0' + clean.substring(3) };
     } else if (clean.length === 9) {
-      return {
-        international: '255' + clean,
-        local: '0' + clean,
-      };
+      return { international: '255' + clean, local: '0' + clean };
     }
-    return {
-      international: clean,
-      local: clean,
-    };
+    return { international: clean, local: clean };
   }
 
-  private detectOperator(phone: string): string {
+  /** Maps a phone number to the exact provider enum the Dalipay API expects. */
+  private detectApiProvider(phone: string): 'Mpesa' | 'Tigo' | 'Airtel' | 'Halopesa' | 'Azampesa' | null {
     const { international } = this.normalizePhone(phone);
     const prefix = international.substring(3, 5); // 255XX...
-    if (['74', '75', '76'].includes(prefix)) return 'Vodacom M-Pesa';
-    if (['71', '65', '67', '77'].includes(prefix)) return 'Tigo Pesa';
-    if (['78', '68', '69'].includes(prefix)) return 'Airtel Money';
-    if (['62', '61'].includes(prefix)) return 'HaloPesa';
-    return 'Tanzania Mobile Money';
+    if (['74', '75', '76'].includes(prefix)) return 'Mpesa';       // Vodacom M-Pesa
+    if (['71', '65', '67', '77'].includes(prefix)) return 'Tigo';   // Tigo Pesa
+    if (['78', '68', '69'].includes(prefix)) return 'Airtel';       // Airtel Money
+    if (['62', '61'].includes(prefix)) return 'Halopesa';           // HaloPesa
+    return null; // e.g. 073/TTCL - not supported by any mobile money provider
+  }
+
+  private displayOperator(apiProvider: string | null): string {
+    switch (apiProvider) {
+      case 'Mpesa': return 'Vodacom M-Pesa';
+      case 'Tigo': return 'Tigo Pesa';
+      case 'Airtel': return 'Airtel Money';
+      case 'Halopesa': return 'HaloPesa';
+      default: return 'Tanzania Mobile Money';
+    }
+  }
+
+  private getBaseUrl(config: PaymentProviderConfig): string {
+    let base = (config.apiUrl || 'https://app.pluspesa.com/api/v1').replace(/\/$/, '');
+    // Be forgiving of old/incorrect values saved in Settings (e.g. the
+    // wrong admin.pluspesa.com host, or a base missing /v1).
+    base = base.replace('admin.pluspesa.com', 'app.pluspesa.com');
+    if (!/\/v1$/.test(base)) {
+      base = base.replace(/\/api$/, '/api/v1');
+      if (!/\/api\/v1$/.test(base)) base = `${base}/api/v1`;
+    }
+    return base;
   }
 
   async initializePayment(req: PaymentInitiateRequest, config: PaymentProviderConfig): Promise<PaymentInitiateResponse> {
-    const { international, local } = this.normalizePhone(req.phoneNumber);
-    const operator = this.detectOperator(req.phoneNumber);
+    const { local } = this.normalizePhone(req.phoneNumber);
     const publicKey = (config.publicKey || config.apiKey || '').trim();
     const secretKey = (config.secretKey || config.apiSecret || '').trim();
-    const activeKey = secretKey || publicKey;
-    const baseUrl = (config.apiUrl || 'https://admin.pluspesa.com/api').replace(/\/$/, '');
+    const baseUrl = this.getBaseUrl(config);
 
-    // If an API key is provided and not in sandbox simulation
-    if (activeKey && config.environment !== 'sandbox') {
-      try {
-        // Prepare multi-header auth compatible with PlusPesa API standards
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${activeKey}`,
-          'X-PUBLIC-KEY': publicKey,
-          'X-SECRET-KEY': secretKey,
-          'x-public-key': publicKey,
-          'x-secret-key': secretKey,
-          'X-API-KEY': activeKey,
-          'x-api-key': activeKey,
-          'apikey': activeKey,
-        };
+    const apiProvider = this.detectApiProvider(req.phoneNumber);
+    const operator = this.displayOperator(apiProvider);
 
-        const payload = {
-          public_key: publicKey,
-          secret_key: secretKey,
-          publicKey,
-          secretKey,
-          api_key: activeKey,
-          apiKey: activeKey,
-          phone: international,
-          phoneNumber: international,
-          phone_number: international,
-          localPhone: local,
-          msisdn: international,
-          amount: req.amountTzs,
-          amount_tzs: req.amountTzs,
-          reference: req.transactionId,
-          order_id: req.transactionId,
-          transaction_id: req.transactionId,
-          description: `Wi-Fi Hotspot - ${req.packageName}`,
-          package: req.packageName,
-          callback_url: req.callbackUrl,
-          webhook_url: req.callbackUrl,
-        };
-
-        // Construct prioritized list of candidate endpoints
-        const endpointCandidates: string[] = [];
-
-        // 1. If user entered a specific direct URL, prioritize it
-        if (config.apiUrl && config.apiUrl.trim()) {
-          const customUrl = config.apiUrl.trim().replace(/\/$/, '');
-          endpointCandidates.push(customUrl);
-          if (!customUrl.endsWith('/c2b') && !customUrl.endsWith('/stkpush') && !customUrl.endsWith('/payments')) {
-            endpointCandidates.push(`${customUrl}/c2b`);
-            endpointCandidates.push(`${customUrl}/v1/c2b`);
-            endpointCandidates.push(`${customUrl}/stkpush`);
-            endpointCandidates.push(`${customUrl}/v1/stkpush`);
-            endpointCandidates.push(`${customUrl}/payment/initialize`);
-            endpointCandidates.push(`${customUrl}/payments`);
-            endpointCandidates.push(`${customUrl}/ussd`);
-            endpointCandidates.push(`${customUrl}/v1/ussd`);
-          }
-        }
-
-        // 2. Standard PlusPesa endpoint paths
-        const base = (config.apiUrl || 'https://admin.pluspesa.com/api').replace(/\/$/, '');
-        const standardPaths = [
-          '/v1/c2b',
-          '/c2b',
-          '/v1/stkpush',
-          '/stkpush',
-          '/v1/payments',
-          '/payments',
-          '/payment/initialize',
-          '/checkout',
-          '/v1/ussd',
-          '/ussd',
-          '/v1/collection',
-          '/collection',
-        ];
-
-        for (const p of standardPaths) {
-          const u = `${base}${p}`;
-          if (!endpointCandidates.includes(u)) {
-            endpointCandidates.push(u);
-          }
-        }
-
-        // 3. Alternative host candidates (api.pluspesa.com, pluspesa.com/api) if base contains admin.pluspesa.com
-        if (base.includes('admin.pluspesa.com')) {
-          const altHosts = ['https://api.pluspesa.com', 'https://pluspesa.com/api'];
-          for (const alt of altHosts) {
-            for (const p of ['/v1/c2b', '/c2b', '/stkpush', '/v1/stkpush']) {
-              const u = `${alt}${p}`;
-              if (!endpointCandidates.includes(u)) {
-                endpointCandidates.push(u);
-              }
-            }
-          }
-        }
-
-        let lastError = '';
-        let lastData: any = null;
-        let successfulResponse: any = null;
-        let successfulEndpoint = '';
-        const attemptedUrls: Array<{ url: string; status: number; textSnippet: string }> = [];
-
-        for (const endpoint of endpointCandidates) {
-          try {
-            // First attempt: JSON body
-            const res = await fetch(endpoint, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify(payload),
-            });
-
-            const text = await res.text();
-            let parsedData: any = null;
-            try {
-              parsedData = JSON.parse(text);
-            } catch {
-              parsedData = { rawText: text.substring(0, 300), status: res.status };
-            }
-
-            attemptedUrls.push({
-              url: endpoint,
-              status: res.status,
-              textSnippet: text.substring(0, 100).replace(/[\r\n]+/g, ' '),
-            });
-
-            if (res.ok) {
-              successfulResponse = parsedData;
-              successfulEndpoint = endpoint;
-              break;
-            } else if (res.status === 401 || res.status === 403) {
-              return {
-                success: false,
-                provider: this.id,
-                status: 'failed',
-                message: `PlusPesa Authentication Failed (HTTP ${res.status}): Invalid Public Key or Secret Key. Please verify your keys on admin.pluspesa.com.`,
-                rawResponse: { endpoint, ...parsedData },
-              };
-            } else if (res.status === 404) {
-              // Endpoint route not found on this path, continue to next candidate
-              lastData = parsedData;
-              lastError = `HTTP 404 on ${endpoint}`;
-            } else {
-              lastData = parsedData;
-              lastError = parsedData?.message || parsedData?.error || `HTTP ${res.status}`;
-            }
-          } catch (endpointErr: unknown) {
-            const errString = endpointErr instanceof Error ? endpointErr.message : String(endpointErr);
-            attemptedUrls.push({ url: endpoint, status: 0, textSnippet: errString });
-            lastError = errString;
-          }
-        }
-
-        if (successfulResponse) {
-          const gwRef =
-            successfulResponse.reference ||
-            successfulResponse.transactionId ||
-            successfulResponse.order_id ||
-            successfulResponse.id ||
-            `PP-${Date.now()}`;
-
-          return {
-            success: true,
-            provider: this.id,
-            gatewayTransactionId: String(gwRef),
-            status: 'pending',
-            message: `USSD push prompt sent to ${local} (${operator}). Please check your phone and enter your PIN to approve TZS ${req.amountTzs.toLocaleString()}.`,
-            ussdPushSent: true,
-            rawResponse: {
-              endpointUsed: successfulEndpoint,
-              ...successfulResponse,
-            },
-          };
-        }
-
-        // If all candidate endpoints returned 404 or other errors, provide an actionable explanation
-        return {
-          success: false,
-          provider: this.id,
-          status: 'failed',
-          message: `PlusPesa Gateway Error (HTTP 404 / Not Found): The PlusPesa API endpoint was not found at ${baseUrl}. Please check your PlusPesa merchant documentation for the exact API Endpoint URL (e.g., https://admin.pluspesa.com/api/v1/c2b or https://api.pluspesa.com/v1/c2b) and paste it into Settings > PlusPesa Gateway > API Base URL.`,
-          rawResponse: {
-            configuredBaseUrl: baseUrl,
-            lastError,
-            attemptedEndpoints: attemptedUrls.slice(0, 6),
-            lastResponse: lastData,
-          },
-        };
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          success: false,
-          provider: this.id,
-          status: 'failed',
-          message: `Could not connect to PlusPesa servers: ${errorMsg}`,
-        };
-      }
+    if (!publicKey || !secretKey) {
+      // No real keys configured at all - simulate so the flow is testable end-to-end.
+      return {
+        success: true,
+        provider: this.id,
+        gatewayTransactionId: `PLUSPESA-SANDBOX-${Date.now()}`,
+        status: 'pending',
+        message: `[PlusPesa Sandbox] USSD prompt initiated for ${local} (${operator}) - TZS ${req.amountTzs.toLocaleString()}.`,
+        ussdPushSent: true,
+        rawResponse: { mode: 'sandbox', reason: 'no public/secret key configured' },
+      };
     }
 
-    // Sandbox / Simulation Mode (or when testing without key)
-    return {
-      success: true,
-      provider: this.id,
-      gatewayTransactionId: `PLUSPESA-SANDBOX-${Date.now()}`,
-      status: 'pending',
-      message: `[PlusPesa Sandbox] USSD prompt initiated for ${local} (${operator}) - TZS ${req.amountTzs.toLocaleString()}.`,
-      ussdPushSent: true,
-      rawResponse: {
-        mode: 'sandbox',
-        phone: international,
-        operator,
-        provider: 'PlusPesa (admin.pluspesa.com)',
-      },
-    };
+    if (!apiProvider) {
+      return {
+        success: false,
+        provider: this.id,
+        status: 'failed',
+        message: `Could not determine a supported mobile money provider for ${local}. This number's prefix (e.g. TTCL/073) is not on Tigo, Airtel, Halopesa, Azampesa, or M-Pesa. Ask the customer for a different number.`,
+      };
+    }
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Public-Key': publicKey,
+        'X-Secret-Key': secretKey,
+      };
+
+      const payload = {
+        account_number: local,               // local format e.g. 0712345678, per Dalipay docs
+        amount: req.amountTzs,
+        currency: 'TZS',
+        provider: apiProvider,                // Tigo | Airtel | Halopesa | Azampesa | Mpesa
+        external_id: req.transactionId.slice(0, 30), // max 30 chars per Dalipay docs
+      };
+
+      const endpoint = `${baseUrl}/collections`;
+      const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(payload) });
+      const text = await res.text();
+
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return {
+          success: false,
+          provider: this.id,
+          status: 'failed',
+          message: `PlusPesa returned a non-JSON response (HTTP ${res.status}) from ${endpoint}. This usually means the base URL is still wrong.`,
+          rawResponse: { endpoint, status: res.status, rawText: text.substring(0, 300) },
+        };
+      }
+
+      if (res.ok && parsed?.success && parsed?.data?.uuid) {
+        const data = parsed.data;
+        return {
+          success: true,
+          provider: this.id,
+          gatewayTransactionId: data.uuid,
+          status: 'pending',
+          message: `USSD push prompt sent to ${local} (${operator}). Please check your phone and enter your PIN to approve TZS ${req.amountTzs.toLocaleString()}.`,
+          ussdPushSent: true,
+          rawResponse: { endpoint, ...data },
+        };
+      }
+
+      // Map known Dalipay error codes to clear messages.
+      const msg = parsed?.message || `HTTP ${res.status}`;
+      let friendly = `PlusPesa Gateway Error: ${msg}`;
+      if (res.status === 401) friendly = `PlusPesa Authentication Failed: Invalid Public/Secret Key. Verify them on admin.pluspesa.com > API Keys.`;
+      else if (res.status === 402) friendly = `PlusPesa: Insufficient balance/limit on your merchant account. ${msg}`;
+      else if (res.status === 403) friendly = `PlusPesa: Forbidden - IP not whitelisted or KYC required. ${msg}`;
+      else if (res.status === 400) friendly = `PlusPesa: Invalid request - ${msg}`;
+
+      return {
+        success: false,
+        provider: this.id,
+        status: 'failed',
+        message: friendly,
+        rawResponse: { endpoint, status: res.status, response: parsed },
+      };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        provider: this.id,
+        status: 'failed',
+        message: `Could not connect to PlusPesa servers: ${errorMsg}`,
+      };
+    }
   }
 
   async checkPaymentStatus(
@@ -273,95 +166,86 @@ export class PlusPesaProvider implements PaymentProvider {
   ): Promise<PaymentStatusResponse> {
     const publicKey = (config.publicKey || config.apiKey || '').trim();
     const secretKey = (config.secretKey || config.apiSecret || '').trim();
-    const activeKey = secretKey || publicKey;
-    const baseUrl = (config.apiUrl || 'https://admin.pluspesa.com/api').replace(/\/$/, '');
+    const baseUrl = this.getBaseUrl(config);
 
-    if (activeKey && config.environment !== 'sandbox' && (gatewayTxId || transactionId)) {
-      try {
-        const headers: Record<string, string> = {
-          'Authorization': `Bearer ${activeKey}`,
-          'X-PUBLIC-KEY': publicKey,
-          'X-SECRET-KEY': secretKey,
-          'x-public-key': publicKey,
-          'x-secret-key': secretKey,
-          'X-API-KEY': activeKey,
-          'x-api-key': activeKey,
-          'apikey': activeKey,
-        };
+    console.log(`[PlusPesa StatusCheck] Called for tx=${transactionId} gatewayTxId=${gatewayTxId || 'MISSING'} hasPublicKey=${!!publicKey} hasSecretKey=${!!secretKey} baseUrl=${baseUrl}`);
 
-        const statusUrls = [
-          `${baseUrl}/payment/status?reference=${encodeURIComponent(gatewayTxId || transactionId)}`,
-          `${baseUrl}/c2b/status?order_id=${encodeURIComponent(transactionId)}`,
-          `${baseUrl}/status/${encodeURIComponent(gatewayTxId || transactionId)}`,
-        ];
-
-        for (const url of statusUrls) {
-          try {
-            const res = await fetch(url, { headers });
-            if (res.ok) {
-              const data = (await res.json()) as Record<string, unknown>;
-              const statusStr = String(
-                data.status || data.payment_status || data.transaction_status || ''
-              ).toLowerCase();
-
-              let status: 'pending' | 'successful' | 'failed' | 'cancelled' = 'pending';
-              if (['success', 'successful', 'completed', 'paid', 'done'].includes(statusStr)) {
-                status = 'successful';
-              } else if (['failed', 'rejected', 'error', 'expired'].includes(statusStr)) {
-                status = 'failed';
-              } else if (['cancelled', 'canceled'].includes(statusStr)) {
-                status = 'cancelled';
-              }
-
-              return {
-                success: true,
-                status,
-                gatewayTransactionId: (data.reference as string) || (data.id as string) || gatewayTxId,
-                amountTzs: Number(data.amount) || 0,
-                paidAt: (data.paid_at as string) || (data.updated_at as string) || new Date().toISOString(),
-                rawResponse: data,
-              };
-            }
-          } catch {
-            // continue checking next status URL
-          }
-        }
-      } catch {
-        // status check fallback
-      }
+    if (!publicKey || !secretKey || !gatewayTxId) {
+      console.warn(`[PlusPesa StatusCheck] Skipping real check - missing ${!publicKey ? 'publicKey ' : ''}${!secretKey ? 'secretKey ' : ''}${!gatewayTxId ? 'gatewayTxId' : ''}. Returning pending.`);
+      return { success: true, status: 'pending', amountTzs: 0 };
     }
 
-    return {
-      success: true,
-      status: 'pending',
-      amountTzs: 0,
-    };
+    try {
+      const headers: Record<string, string> = {
+        'X-Public-Key': publicKey,
+        'X-Secret-Key': secretKey,
+      };
+
+      const statusUrl = `${baseUrl}/collections/${encodeURIComponent(gatewayTxId)}/status`;
+      const res = await fetch(statusUrl, { headers });
+      const text = await res.text();
+      let parsed: any = null;
+      try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+
+      console.log(`[PlusPesa StatusCheck] ${statusUrl} -> HTTP ${res.status}:`, text.substring(0, 500));
+
+      if (res.ok && parsed?.success && parsed?.data) {
+        const data = parsed.data;
+        let status: 'pending' | 'successful' | 'failed' | 'cancelled' = 'pending';
+        if (data.status === 'success') status = 'successful';
+        else if (data.status === 'failed') status = 'failed';
+        else if (data.status === 'cancelled') status = 'cancelled';
+
+        return {
+          success: true,
+          status,
+          gatewayTransactionId: data.uuid || gatewayTxId,
+          amountTzs: Number(data.amount) || 0,
+          paidAt: data.updated_at || new Date().toISOString(),
+          rawResponse: data,
+        };
+      } else {
+        console.warn(`[PlusPesa StatusCheck] Unrecognized response shape for ${gatewayTxId}. Full body:`, text);
+      }
+    } catch (err) {
+      console.error(`[PlusPesa StatusCheck] Request failed for ${gatewayTxId}:`, err);
+    }
+
+    return { success: true, status: 'pending', amountTzs: 0 };
   }
 
   async handleWebhook(
     headers: Record<string, string | string[] | undefined>,
     body: Record<string, unknown>,
-    config: PaymentProviderConfig
+    config: PaymentProviderConfig,
+    rawBody?: string
   ): Promise<WebhookResult> {
-    const rawStatus = String(
-      body.status || body.payment_status || body.transaction_status || ''
-    ).toLowerCase();
+    const callbackSecret = (config as any).callbackSecret || '';
+    const signature = String(headers['x-signature'] || '');
 
+    let verified = false;
+    if (callbackSecret && signature && rawBody) {
+      const expected = crypto.createHmac('sha256', callbackSecret).update(rawBody).digest('hex');
+      try {
+        verified = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+      } catch {
+        verified = false;
+      }
+    }
+
+    const event = String((body as any).event || '');
+    const data = (body as any).data || {};
     const status: 'successful' | 'failed' | 'cancelled' =
-      ['success', 'successful', 'completed', 'paid'].includes(rawStatus)
-        ? 'successful'
-        : ['cancelled', 'canceled'].includes(rawStatus)
-        ? 'cancelled'
-        : 'failed';
+      event === 'collection.success' || data.status === 'success' ? 'successful' : 'failed';
 
     return {
-      verified: true,
-      transactionId: String(body.reference || body.order_id || body.transaction_id || body.id || ''),
-      gatewayTransactionId: String(body.gateway_reference || body.reference || body.id || ''),
+      verified,
+      transactionId: String(data.external_id || ''),
+      gatewayTransactionId: String(data.uuid || data.reference || ''),
       status,
-      amountTzs: Number(body.amount) || 0,
-      phoneNumber: String(body.phone || body.phoneNumber || body.msisdn || ''),
-      failureReason: body.message ? String(body.message) : undefined,
+      amountTzs: Number(data.amount) || 0,
+      phoneNumber: '',
+      failureReason: !verified ? 'Signature verification failed or callbackSecret/rawBody not configured' : undefined,
       rawPayload: body,
     };
   }
