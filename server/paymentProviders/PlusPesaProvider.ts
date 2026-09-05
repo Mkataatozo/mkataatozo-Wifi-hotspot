@@ -168,10 +168,14 @@ export class PlusPesaProvider implements PaymentProvider {
     const secretKey = (config.secretKey || config.apiSecret || '').trim();
     const baseUrl = this.getBaseUrl(config);
 
+<<<<<<< HEAD
     console.log(`[PlusPesa StatusCheck] Called for tx=${transactionId} gatewayTxId=${gatewayTxId || 'MISSING'} hasPublicKey=${!!publicKey} hasSecretKey=${!!secretKey} baseUrl=${baseUrl}`);
 
     if (!publicKey || !secretKey || !gatewayTxId) {
       console.warn(`[PlusPesa StatusCheck] Skipping real check - missing ${!publicKey ? 'publicKey ' : ''}${!secretKey ? 'secretKey ' : ''}${!gatewayTxId ? 'gatewayTxId' : ''}. Returning pending.`);
+=======
+    if (!publicKey || !secretKey || !gatewayTxId) {
+>>>>>>> 48ba9958aac52f0068de42e1c81306c167dd306e
       return { success: true, status: 'pending', amountTzs: 0 };
     }
 
