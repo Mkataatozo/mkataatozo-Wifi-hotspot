@@ -1,14 +1,9 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
 import { apiRouter } from './server/routes/api.js';
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
@@ -26,8 +21,12 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
-  // Vite middleware for development vs static build in production
+  // Vite middleware for development vs static build in production.
+  // Vite is imported dynamically here (not at the top of the file) so that
+  // production builds never bundle Vite's Node API at all - it's ESM-only
+  // and breaks when force-converted to CommonJS by esbuild.
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
