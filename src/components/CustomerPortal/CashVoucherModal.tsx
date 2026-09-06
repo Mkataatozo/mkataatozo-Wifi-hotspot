@@ -20,6 +20,8 @@ interface CashVoucherModalProps {
   onClose: () => void;
   onBack: () => void;
   onSuccess: (session: HotspotSession) => void;
+  clientMac?: string;
+  clientIp?: string;
 }
 
 export const CashVoucherModal: React.FC<CashVoucherModalProps> = ({
@@ -29,6 +31,8 @@ export const CashVoucherModal: React.FC<CashVoucherModalProps> = ({
   onClose,
   onBack,
   onSuccess,
+  clientMac,
+  clientIp,
 }) => {
   const t = translations[lang];
   const [voucherCode, setVoucherCode] = useState('');
@@ -55,6 +59,8 @@ export const CashVoucherModal: React.FC<CashVoucherModalProps> = ({
         body: JSON.stringify({
           voucherCode: cleanCode,
           phoneNumber: customerPhone || undefined,
+          mac: clientMac,
+          ip: clientIp,
         }),
       });
 
