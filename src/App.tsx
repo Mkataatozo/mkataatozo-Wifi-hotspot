@@ -49,6 +49,65 @@ import { ReportsView } from './components/AdminPortal/ReportsView.js';
 import { AuditLogsView } from './components/AdminPortal/AuditLogsView.js';
 import { SettingsView } from './components/AdminPortal/SettingsView.js';
 
+/**
+ * MikroTik's Hotspot system redirects an unauthenticated client's browser to the
+ * portal with query parameters identifying that exact device and the URL needed
+ * to complete the real router-side login (RouterOS replaces $(...) placeholders
+ * with these on redirect - see /ip hotspot profile html-directory pages).
+ * Typical real-world URL looks like:
+ *   https://yourdomain.xyz/?mac=D4:CA:6D:88:12:44&ip=192.168.88.240
+ *     &link-login-only=http://192.168.88.1/login&link-orig=http://example.com/
+ */
+function parseMikrotikRedirectParams() {
+  const params = new URLSearchParams(window.location.search);
+  const mac = params.get('mac') || undefined;
+  const ip = params.get('ip') || undefined;
+  const linkLoginOnly = params.get('link-login-only') || params.get('link-login') || undefined;
+  const linkOrig = params.get('link-orig') || undefined;
+  return { mac, ip, linkLoginOnly, linkOrig };
+}
+
+/**
+ * Silently completes the real MikroTik Hotspot login handshake by submitting a
+ * hidden form to the router's own login endpoint via a hidden iframe - this is
+ * what actually moves the client from "walled garden only" to fully authenticated
+ * on the router. Without this, creating a user via the RouterOS API alone does
+ * NOT grant the waiting browser real internet access.
+ */
+function completeMikrotikLogin(linkLoginOnly: string, username: string, password: string) {
+  try {
+    const iframeName = 'mikrotik-login-frame';
+    let iframe = document.querySelector<HTMLIFrameElement>(`iframe[name="${iframeName}"]`);
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.name = iframeName;
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = linkLoginOnly;
+    form.target = iframeName;
+
+    const addField = (name: string, value: string) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+    addField('username', username);
+    addField('password', password);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+  } catch (err) {
+    console.error('Failed to complete MikroTik router login handshake:', err);
+  }
+}
+
 export default function App() {
   // Global & Language State
   const [lang, setLang] = useState<'en' | 'sw'>('sw'); // Default to Kiswahili for Tanzania
@@ -124,10 +183,11 @@ export default function App() {
   ]);
   const [currentSession, setCurrentSession] = useState<HotspotSession | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
-  const [clientInfo, setClientInfo] = useState<{ mac: string; ip: string } | null>({
-    mac: 'D4:CA:6D:88:12:44',
-    ip: '192.168.88.240',
-  });
+  const [mikrotikRedirect] = useState(() => parseMikrotikRedirectParams());
+  const [clientInfo, setClientInfo] = useState<{ mac: string; ip: string } | null>(() => ({
+    mac: mikrotikRedirect.mac || 'D4:CA:6D:88:12:44',
+    ip: mikrotikRedirect.ip || '192.168.88.240',
+  }));
   const [settings, setSettings] = useState<HotspotSettings>({
     businessName: 'HotspotTZ Wi-Fi',
     hotspotName: 'MikroTik RB941 Node',
@@ -158,9 +218,14 @@ export default function App() {
   const loadPortalData = useCallback(async () => {
     setIsLoadingPortal(true);
     try {
+      const statusQuery = new URLSearchParams();
+      if (mikrotikRedirect.mac) statusQuery.set('mac', mikrotikRedirect.mac);
+      if (mikrotikRedirect.ip) statusQuery.set('ip', mikrotikRedirect.ip);
+      const statusUrl = `/api/status${statusQuery.toString() ? `?${statusQuery.toString()}` : ''}`;
+
       const [pkgsRes, statusRes] = await Promise.all([
         fetch('/api/packages').catch(() => null),
-        fetch('/api/status').catch(() => null),
+        fetch(statusUrl).catch(() => null),
       ]);
 
       if (pkgsRes && pkgsRes.ok) {
@@ -236,6 +301,12 @@ export default function App() {
 
     const rem = Math.max(0, Math.floor((new Date(session.expiryTime).getTime() - Date.now()) / 1000));
     setRemainingSeconds(rem);
+
+    // Complete the real router-side login so the device actually gets internet
+    // access - creating the user via the RouterOS API alone isn't enough.
+    if (mikrotikRedirect.linkLoginOnly && session.mikrotikUser) {
+      completeMikrotikLogin(mikrotikRedirect.linkLoginOnly, session.mikrotikUser, session.mikrotikUser);
+    }
   };
 
   // Handle Disconnect
@@ -479,6 +550,8 @@ export default function App() {
             setIsChoiceModalOpen(true);
           }}
           onSuccess={handleSessionActivated}
+          clientMac={clientInfo?.mac}
+          clientIp={clientInfo?.ip}
         />
       )}
 
@@ -494,6 +567,8 @@ export default function App() {
             if (selectedPackage) setIsChoiceModalOpen(true);
           }}
           onSuccess={handleSessionActivated}
+          clientMac={clientInfo?.mac}
+          clientIp={clientInfo?.ip}
         />
       )}
 
