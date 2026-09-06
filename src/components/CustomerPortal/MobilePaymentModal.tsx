@@ -18,6 +18,8 @@ interface MobilePaymentModalProps {
   onClose: () => void;
   onBack: () => void;
   onSuccess: (session: HotspotSession) => void;
+  clientMac?: string;
+  clientIp?: string;
 }
 
 export const MobilePaymentModal: React.FC<MobilePaymentModalProps> = ({
@@ -26,6 +28,8 @@ export const MobilePaymentModal: React.FC<MobilePaymentModalProps> = ({
   onClose,
   onBack,
   onSuccess,
+  clientMac,
+  clientIp,
 }) => {
   const t = translations[lang];
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -66,6 +70,8 @@ export const MobilePaymentModal: React.FC<MobilePaymentModalProps> = ({
         body: JSON.stringify({
           phoneNumber: cleanPhone,
           packageId: pkg.id,
+          mac: clientMac,
+          ip: clientIp,
         }),
       });
 
