@@ -30,6 +30,9 @@ export interface TimePackage {
   description: string;
   status: 'active' | 'inactive';
   popular?: boolean;
+  /** Shown as a warning banner in the mobile payment modal for this specific
+   * package - e.g. when an amount is too low for some networks' USSD push. */
+  mobilePaymentNotice?: string;
   createdAt: string;
   updatedAt: string;
 }
