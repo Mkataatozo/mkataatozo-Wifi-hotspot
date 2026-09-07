@@ -163,6 +163,13 @@ export const MobilePaymentModal: React.FC<MobilePaymentModalProps> = ({
               {t.mobilePaymentSubtitle}
             </p>
 
+            {pkg.mobilePaymentNotice && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs leading-relaxed flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                <span className="font-semibold">{pkg.mobilePaymentNotice}</span>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="input-customer-phone">
                 {t.phoneNumberLabel}
