@@ -382,6 +382,75 @@ apiRouter.post('/payments/simulate-success/:transactionId', async (req: Request,
   });
 });
 
+// -------------------------------------------------------------
+// FREE TRIAL (one-time only, ever, per device MAC address)
+// -------------------------------------------------------------
+const FREE_TRIAL_DURATION_MINUTES = 3;
+const DEMO_FALLBACK_MAC = 'D4:CA:6D:88:12:44';
+
+apiRouter.post('/free-trial/start', async (req: Request, res: Response) => {
+  try {
+    const { ip, mac } = getClientNetworkInfo(req);
+
+    if (!mac || mac.toUpperCase() === DEMO_FALLBACK_MAC) {
+      return res.status(400).json({
+        error: 'Could not detect your device. Please connect through the WiFi hotspot and try again.',
+      });
+    }
+
+    if (db.hasUsedFreeTrial(mac)) {
+      return res.status(403).json({
+        error: 'Free trial already used on this device. Please choose a paid package to continue.',
+      });
+    }
+
+    const startTime = new Date();
+    const expiryTime = new Date(startTime.getTime() + FREE_TRIAL_DURATION_MINUTES * 60000);
+    const mikrotikUser = `trial_${mac.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}_${Date.now().toString().slice(-4)}`;
+
+    const routerAuth = await defaultMikroTikService.authorizeCustomer({
+      username: mikrotikUser,
+      durationMinutes: FREE_TRIAL_DURATION_MINUTES,
+      macAddress: mac,
+      ipAddress: ip,
+      comment: `FreeTrial:${FREE_TRIAL_DURATION_MINUTES}min`,
+    });
+
+    // Mark this device as having used its one and only free trial - permanent,
+    // survives restarts.
+    db.markFreeTrialUsed(mac);
+
+    const session: HotspotSession = {
+      id: `sess-trial-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      customerIdentifier: mac,
+      customerMac: mac,
+      customerIp: ip || '192.168.88.240',
+      packageId: 'free-trial',
+      packageName: 'Free Trial',
+      durationMinutes: FREE_TRIAL_DURATION_MINUTES,
+      startTime: startTime.toISOString(),
+      expiryTime: expiryTime.toISOString(),
+      status: 'active',
+      mikrotikUser,
+      mikrotikSessionId: routerAuth.username,
+    };
+
+    db.createSession(session);
+
+    db.logAudit({
+      adminEmail: 'system:free-trial',
+      action: 'FREE_TRIAL_GRANTED',
+      description: `Free ${FREE_TRIAL_DURATION_MINUTES}-minute trial granted to device ${mac}.`,
+      metadata: { mac, sessionId: session.id },
+    });
+
+    res.json({ success: true, session });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: `Could not start free trial: ${errorMsg}` });
+  }
+});
+
 /**
  * Core Fulfill Function: Grants MikroTik Internet Access Upon Verified Payment
  */
