@@ -230,6 +230,7 @@ export interface SystemSettings {
     apiPort: number;
     username: string;
     passwordMasked: string;
+    password?: string;
     enabled: boolean;
     demoMode: boolean;
   };
