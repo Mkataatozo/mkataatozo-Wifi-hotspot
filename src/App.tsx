@@ -292,6 +292,31 @@ export default function App() {
     setIsCashModalOpen(true);
   };
 
+  const [isFreeTrialLoading, setIsFreeTrialLoading] = useState(false);
+  const [freeTrialError, setFreeTrialError] = useState<string | null>(null);
+
+  const handleFreeTrial = async () => {
+    setIsFreeTrialLoading(true);
+    setFreeTrialError(null);
+    try {
+      const query = new URLSearchParams();
+      if (clientInfo?.mac) query.set('mac', clientInfo.mac);
+      if (clientInfo?.ip) query.set('ip', clientInfo.ip);
+      const res = await fetch(`/api/free-trial/start${query.toString() ? `?${query.toString()}` : ''}`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to start free trial.');
+      }
+      handleSessionActivated(data.session);
+    } catch (err) {
+      setFreeTrialError(err instanceof Error ? err.message : 'Failed to start free trial.');
+    } finally {
+      setIsFreeTrialLoading(false);
+    }
+  };
+
   // Handle Successful Connection
   const handleSessionActivated = (session: HotspotSession) => {
     setIsChoiceModalOpen(false);
@@ -404,10 +429,16 @@ export default function App() {
                     <span>{lang === 'sw' ? 'Mtandao wa Kasi wa Wi-Fi' : 'High-Speed Wi-Fi Hotspot'}</span>
                   </div>
                   <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-tight">
-                    {t.heroTitle}
+                    {t.welcomeTitle} {settings.businessName}
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                    {t.heroSubtitle}
+                    {t.welcomeSubtitle}{' '}
+                    <a
+                      href={`tel:${settings.adminPhoneNumber}`}
+                      className="font-bold text-emerald-700 underline underline-offset-2"
+                    >
+                      {settings.adminPhoneNumber}
+                    </a>
                   </p>
                 </div>
 
@@ -437,6 +468,43 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* Free Trial Banner - one-time only per device */}
+            <div className="bg-linear-to-r from-emerald-600 to-emerald-700 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-sm sm:text-base">
+                    {lang === 'sw' ? 'Jaribu Bure kwa Dakika 3!' : 'Try 3 Minutes Free!'}
+                  </h3>
+                  <p className="text-emerald-100 text-[11px] sm:text-xs">
+                    {lang === 'sw'
+                      ? 'Mara moja tu kwa kila simu/kifaa. Baada ya hapo utahitajika kulipa.'
+                      : 'One-time only per device. After that, choose a package to continue.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleFreeTrial}
+                disabled={isFreeTrialLoading}
+                className="shrink-0 px-5 py-2.5 bg-white hover:bg-emerald-50 disabled:opacity-60 text-emerald-700 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition-colors flex items-center justify-center gap-2"
+                id="btn-free-trial"
+              >
+                {isFreeTrialLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                <span>{lang === 'sw' ? 'Anza Bure Sasa' : 'Start Free Now'}</span>
+              </button>
+            </div>
+            {freeTrialError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                {freeTrialError}
+              </div>
+            )}
 
             {/* Packages Section Heading */}
             <div className="flex items-center justify-between">
