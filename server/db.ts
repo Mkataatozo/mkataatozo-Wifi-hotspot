@@ -19,6 +19,7 @@ import {
 // NOTE: this file contains real secrets (payment gateway keys, MikroTik
 // password) - make sure server/data/ is in .gitignore.
 const SETTINGS_FILE = path.join(process.cwd(), 'server', 'data', 'settings.json');
+const FREE_TRIAL_FILE = path.join(process.cwd(), 'server', 'data', 'free-trial-usage.json');
 
 /**
  * In-Memory & Supabase-Compatible Normalized Data Store for HotspotTZ Multi-Site
@@ -28,6 +29,9 @@ class DatabaseStore {
   public vouchers: Map<string, Voucher> = new Map();
   public transactions: Map<string, PaymentTransaction> = new Map();
   public sessions: Map<string, HotspotSession> = new Map();
+  /** MAC addresses that have already used their one-time free trial - persisted
+   * to disk so a restart can never let someone get a second free trial. */
+  public freeTrialUsedMacs: Set<string> = new Set();
   public customers: Map<string, Customer> = new Map();
   public routers: Map<string, MikroTikRouter> = new Map();
   public auditLogs: AuditLog[] = [];
@@ -79,6 +83,7 @@ class DatabaseStore {
     };
 
     this.loadSettingsFromDisk();
+    this.loadFreeTrialUsageFromDisk();
     this.seedInitialData();
   }
 
@@ -104,6 +109,37 @@ class DatabaseStore {
     } catch (err) {
       console.error('[DB] Failed to persist settings to disk:', err);
     }
+  }
+
+  private loadFreeTrialUsageFromDisk() {
+    try {
+      if (fs.existsSync(FREE_TRIAL_FILE)) {
+        const saved: string[] = JSON.parse(fs.readFileSync(FREE_TRIAL_FILE, 'utf-8'));
+        this.freeTrialUsedMacs = new Set(saved.map((m) => m.toUpperCase()));
+        console.log(`[DB] Loaded ${this.freeTrialUsedMacs.size} free-trial-used device(s) from disk`);
+      }
+    } catch (err) {
+      console.error('[DB] Failed to load free trial usage, starting empty:', err);
+    }
+  }
+
+  private saveFreeTrialUsageToDisk() {
+    try {
+      const dir = path.dirname(FREE_TRIAL_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(FREE_TRIAL_FILE, JSON.stringify([...this.freeTrialUsedMacs], null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[DB] Failed to persist free trial usage to disk:', err);
+    }
+  }
+
+  public hasUsedFreeTrial(mac: string): boolean {
+    return this.freeTrialUsedMacs.has(mac.toUpperCase());
+  }
+
+  public markFreeTrialUsed(mac: string) {
+    this.freeTrialUsedMacs.add(mac.toUpperCase());
+    this.saveFreeTrialUsageToDisk();
   }
 
   private seedInitialData() {
@@ -238,41 +274,33 @@ class DatabaseStore {
     // 1. Initial Packages (All 100% Time-Based, TZS Currency)
     const initialPackages: TimePackage[] = [
       {
-        id: 'pkg-1h',
-        name: '1 Hour Access',
-        durationMinutes: 60,
-        durationValue: 1,
+        id: 'pkg-2h',
+        name: '2 Hours Access',
+        durationMinutes: 120,
+        durationValue: 2,
         durationUnit: 'hours',
-        priceTzs: 300,
-        description: 'Instant 1-hour fast internet. Perfect for quick browsing and messaging.',
+        priceTzs: 200,
+        description: 'Quick 2-hour fast internet. Perfect for browsing and messaging.',
         status: 'active',
         popular: false,
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
         updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
       },
       {
-        id: 'pkg-3h',
-        name: '3 Hours Access',
-        durationMinutes: 180,
-        durationValue: 3,
+        id: 'pkg-5h',
+        name: '5 Hours Access',
+        durationMinutes: 300,
+        durationValue: 5,
         durationUnit: 'hours',
         priceTzs: 500,
-        description: '3 hours of continuous connection. Ideal for research and streaming.',
+        description: '5 hours of continuous connection. Ideal for research and streaming.',
         status: 'active',
         popular: true,
-        createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-      },
-      {
-        id: 'pkg-6h',
-        name: '6 Hours Access',
-        durationMinutes: 360,
-        durationValue: 6,
-        durationUnit: 'hours',
-        priceTzs: 1000,
-        description: '6 hours daytime or evening access with seamless reconnect.',
-        status: 'active',
-        popular: false,
+        // Many mobile money networks reject USSD/STK push requests under
+        // TZS 1000 - this package needs to be paid via Airtel Money only,
+        // or a cash voucher, until that changes.
+        mobilePaymentNotice:
+          "Kifurushi hiki kulipa kwa simu tumia Airtel pekee au nunua vocha kwa wakala wetu '[JINA LA WAKALA]' au piga simu '[NAMBA YA SIMU]'.",
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
         updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
       },
@@ -282,7 +310,7 @@ class DatabaseStore {
         durationMinutes: 720,
         durationValue: 12,
         durationUnit: 'hours',
-        priceTzs: 1500,
+        priceTzs: 1000,
         description: 'Half day full coverage for study or remote work sessions.',
         status: 'active',
         popular: false,
@@ -295,10 +323,23 @@ class DatabaseStore {
         durationMinutes: 1440,
         durationValue: 24,
         durationUnit: 'hours',
-        priceTzs: 2000,
+        priceTzs: 1500,
         description: 'Full 24-hour day access without interruptions.',
         status: 'active',
-        popular: true,
+        popular: false,
+        createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+        updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+      },
+      {
+        id: 'pkg-50h',
+        name: '50 Hours (2 Days)',
+        durationMinutes: 3000,
+        durationValue: 50,
+        durationUnit: 'hours',
+        priceTzs: 2500,
+        description: '50 hours (about 2 days) of extended access.',
+        status: 'active',
+        popular: false,
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
         updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
       },
@@ -308,7 +349,7 @@ class DatabaseStore {
         durationMinutes: 10080,
         durationValue: 7,
         durationUnit: 'days',
-        priceTzs: 10000,
+        priceTzs: 5000,
         description: '7 full consecutive days of high-speed Wi-Fi hotspot access.',
         status: 'active',
         popular: false,
