@@ -1068,6 +1068,7 @@ apiRouter.get('/admin/routers/:id/script', (req: Request, res: Response) => {
     dnsName: `${(router?.siteCode || 'hotspot').toLowerCase()}.local`,
     hotspotSubnet: '192.168.88.0/24',
     gatewayIp,
+    apiPassword: db.settings.mikrotik.password || 'CHANGE_ME_STRONG_PASSWORD',
   });
 
   res.json({ script, routerName: router?.name, siteCode: router?.siteCode });
@@ -1133,6 +1134,7 @@ apiRouter.get('/admin/mikrotik/script', (req: Request, res: Response) => {
     dnsName: 'hotspot.local',
     hotspotSubnet: '192.168.88.0/24',
     gatewayIp: db.settings.mikrotik.host || '192.168.88.1',
+    apiPassword: db.settings.mikrotik.password || 'CHANGE_ME_STRONG_PASSWORD',
   });
   res.json({ script });
 });
@@ -1144,6 +1146,7 @@ apiRouter.get('/admin/mikrotik/setup-script', (req: Request, res: Response) => {
     dnsName: 'hotspot.local',
     hotspotSubnet: '192.168.88.0/24',
     gatewayIp: db.settings.mikrotik.host || '192.168.88.1',
+    apiPassword: db.settings.mikrotik.password || 'CHANGE_ME_STRONG_PASSWORD',
   });
   res.type('text/plain').send(script);
 });
