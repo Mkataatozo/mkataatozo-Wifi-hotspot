@@ -1,4 +1,5 @@
 import net from 'net';
+import { RouterOSAPI } from 'node-routeros';
 
 export interface MikroTikConfig {
   host: string;
@@ -35,8 +36,13 @@ export interface HotspotActiveUser {
 }
 
 /**
- * MikroTik RouterOS API Service for RB941 / RouterBOARD devices
- * Handles Hotspot User Creation, Active Session Management, Time Limiting & Disconnection
+ * MikroTik RouterOS API Service for RB941 / RouterBOARD devices.
+ * Handles Hotspot User Creation, Active Session Management, Time Limiting & Disconnection.
+ *
+ * Uses the real RouterOS binary API protocol (via node-routeros) over TCP port 8728
+ * (or 8729 for api-ssl). Falls back to a clearly-labelled simulation ONLY when
+ * demoMode is explicitly enabled or no password has been configured yet - it never
+ * silently pretends success for a configured real router.
  */
 export class MikroTikService {
   private config: MikroTikConfig;
@@ -47,19 +53,22 @@ export class MikroTikService {
       host: config?.host || process.env.MIKROTIK_HOST || '192.168.88.1',
       port: Number(config?.port || process.env.MIKROTIK_PORT || 8728),
       username: config?.username || process.env.MIKROTIK_USERNAME || 'admin',
-      password: config?.password || process.env.MIKROTIK_PASSWORD || '',
-      timeoutMs: config?.timeoutMs || 4000,
-      demoMode: config?.demoMode ?? (process.env.NODE_ENV !== 'production' || !process.env.MIKROTIK_HOST),
+      password: config?.password ?? process.env.MIKROTIK_PASSWORD ?? '',
+      timeoutMs: config?.timeoutMs || 8000,
+      // Only simulate when explicitly asked to, or when no password has been set at all
+      // (a real RouterOS API login with a blank password will fail anyway on any
+      // properly secured router, so there's nothing real to attempt yet).
+      demoMode: config?.demoMode ?? !(config?.password || process.env.MIKROTIK_PASSWORD),
     };
 
     this.lastStatus = {
       connected: false,
       model: 'MikroTik RB941-2nD (hAP lite)',
-      version: 'RouterOS v7.14.3',
-      cpuLoad: 12,
-      freeMemoryMb: 24.5,
-      totalMemoryMb: 32.0,
-      uptime: '14d 06:22:45',
+      version: 'Unknown',
+      cpuLoad: 0,
+      freeMemoryMb: 0,
+      totalMemoryMb: 0,
+      uptime: 'Unknown',
       activeHotspotUsers: 0,
       identity: 'HotspotTZ-RB941',
       lastChecked: new Date().toISOString(),
@@ -68,105 +77,116 @@ export class MikroTikService {
 
   public updateConfig(newConfig: Partial<MikroTikConfig>) {
     this.config = { ...this.config, ...newConfig };
+    // Re-evaluate demoMode whenever config changes, unless explicitly overridden.
+    if (newConfig.demoMode === undefined && newConfig.password !== undefined) {
+      this.config.demoMode = !newConfig.password;
+    }
   }
 
   public getConfig(): MikroTikConfig {
     return { ...this.config, password: this.config.password ? '••••••••' : '' };
   }
 
+  private async withConnection<T>(fn: (api: RouterOSAPI) => Promise<T>): Promise<T> {
+    const api = new RouterOSAPI({
+      host: this.config.host,
+      user: this.config.username,
+      password: this.config.password || '',
+      port: this.config.port,
+      timeout: Math.ceil((this.config.timeoutMs || 8000) / 1000),
+    });
+    try {
+      await api.connect();
+      const result = await fn(api);
+      return result;
+    } finally {
+      try {
+        await api.close();
+      } catch {
+        // ignore close errors - connection may already be gone
+      }
+    }
+  }
+
+  private demoRouterInfo(connected: boolean, message?: string): RouterInfo {
+    this.lastStatus = {
+      connected,
+      model: 'MikroTik RB941-2nD (hAP lite)',
+      version: 'RouterOS v7.14.3',
+      cpuLoad: Math.floor(8 + Math.random() * 15),
+      freeMemoryMb: Number((22.0 + Math.random() * 4).toFixed(1)),
+      totalMemoryMb: 32.0,
+      uptime: '18d 14:02:11',
+      activeHotspotUsers: 3,
+      identity: 'HotspotTZ-Gateway',
+      lastChecked: new Date().toISOString(),
+      message: message || '[DEMO MODE - no MikroTik password configured yet] Simulated response, not a real router.',
+    };
+    return this.lastStatus;
+  }
+
   /**
-   * Test network connection to the MikroTik RB941 router via TCP API port (default 8728)
+   * Test network connection AND authenticate to the MikroTik router.
+   * Only returns success:true if the real RouterOS API login actually succeeded.
    */
   async testConnection(): Promise<{ success: boolean; latencyMs: number; message: string; routerInfo: RouterInfo }> {
     const startTime = Date.now();
 
-    // If configured with demoMode or host is loopback/unreachable in sandboxed cloud, run simulation
-    if (this.config.demoMode || this.config.host === '192.168.88.1' || this.config.host === 'localhost') {
-      const isConfigured = Boolean(this.config.host && this.config.username);
-      this.lastStatus = {
-        connected: isConfigured,
-        model: 'MikroTik RB941-2nD (hAP lite)',
-        version: 'RouterOS v7.14.3',
-        cpuLoad: Math.floor(8 + Math.random() * 15),
-        freeMemoryMb: Number((22.0 + Math.random() * 4).toFixed(1)),
-        totalMemoryMb: 32.0,
-        uptime: '18d 14:02:11',
-        activeHotspotUsers: 3,
-        identity: 'HotspotTZ-Gateway',
-        lastChecked: new Date().toISOString(),
-        message: isConfigured
-          ? 'Connected successfully to MikroTik RB941 API (Sandbox / Lab Controller Mode)'
-          : 'Router host or credentials not configured.',
-      };
-
+    if (this.config.demoMode) {
+      const info = this.demoRouterInfo(true);
       return {
-        success: isConfigured,
+        success: true,
         latencyMs: Date.now() - startTime + 12,
-        message: this.lastStatus.message || 'Connected',
-        routerInfo: this.lastStatus,
+        message: info.message || 'Demo mode active',
+        routerInfo: info,
       };
     }
 
-    // Real TCP Socket Probe to MikroTik RouterOS API Port 8728
-    return new Promise((resolve) => {
-      const socket = new net.Socket();
-      socket.setTimeout(this.config.timeoutMs || 4000);
+    try {
+      const routerInfo = await this.withConnection(async (api) => {
+        const [resource] = await api.write('/system/resource/print');
+        const [identity] = await api.write('/system/identity/print');
+        const activeUsers = await api.write('/ip/hotspot/active/print');
 
-      socket.on('connect', () => {
-        const latency = Date.now() - startTime;
-        socket.destroy();
-        this.lastStatus = {
+        const info: RouterInfo = {
           connected: true,
-          model: 'MikroTik RB941-2nD',
-          version: 'RouterOS API',
-          cpuLoad: 15,
-          freeMemoryMb: 23.8,
-          totalMemoryMb: 32.0,
-          uptime: 'Live',
-          activeHotspotUsers: 1,
-          identity: 'MikroTik-Live',
-          message: `Connected to MikroTik Router at ${this.config.host}:${this.config.port} in ${latency}ms`,
+          model: (resource?.['board-name'] as string) || 'MikroTik',
+          version: (resource?.version as string) || 'Unknown',
+          cpuLoad: Number(resource?.['cpu-load']) || 0,
+          freeMemoryMb: Number(resource?.['free-memory']) / (1024 * 1024) || 0,
+          totalMemoryMb: Number(resource?.['total-memory']) / (1024 * 1024) || 0,
+          uptime: (resource?.uptime as string) || 'Unknown',
+          activeHotspotUsers: activeUsers.length,
+          identity: (identity?.name as string) || 'MikroTik',
+          message: `Connected and authenticated successfully to ${this.config.host}:${this.config.port}`,
           lastChecked: new Date().toISOString(),
         };
-        resolve({
-          success: true,
-          latencyMs: latency,
-          message: `Successfully connected to MikroTik RB941 at ${this.config.host}:${this.config.port}`,
-          routerInfo: this.lastStatus,
-        });
+        return info;
       });
 
-      socket.on('timeout', () => {
-        socket.destroy();
-        this.lastStatus.connected = false;
-        this.lastStatus.message = `Connection timed out after ${this.config.timeoutMs}ms to ${this.config.host}:${this.config.port}`;
-        resolve({
-          success: false,
-          latencyMs: this.config.timeoutMs || 4000,
-          message: `MikroTik RB941 unreachable at ${this.config.host}:${this.config.port} (Timeout). Verify IP and API service enabled (/ip service enable api).`,
-          routerInfo: this.lastStatus,
-        });
-      });
-
-      socket.on('error', (err) => {
-        socket.destroy();
-        this.lastStatus.connected = false;
-        this.lastStatus.message = `Socket error: ${err.message}`;
-        resolve({
-          success: false,
-          latencyMs: Date.now() - startTime,
-          message: `Could not connect to ${this.config.host}:${this.config.port}: ${err.message}`,
-          routerInfo: this.lastStatus,
-        });
-      });
-
-      socket.connect(this.config.port, this.config.host);
-    });
+      this.lastStatus = routerInfo;
+      return {
+        success: true,
+        latencyMs: Date.now() - startTime,
+        message: routerInfo.message || 'Connected',
+        routerInfo,
+      };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.lastStatus.connected = false;
+      this.lastStatus.message = `Real connection failed: ${errorMsg}`;
+      return {
+        success: false,
+        latencyMs: Date.now() - startTime,
+        message: `Could not connect/authenticate to MikroTik at ${this.config.host}:${this.config.port}: ${errorMsg}. Verify: IP is reachable, API service is enabled (/ip service enable api), and username/password are correct.`,
+        routerInfo: this.lastStatus,
+      };
+    }
   }
 
   /**
-   * Authorize a customer on the MikroTik Hotspot
-   * Creates a user in /ip hotspot user with a strict time limit (limit-uptime)
+   * Authorize a customer on the MikroTik Hotspot.
+   * Creates (or refreshes) a user in /ip/hotspot/user with a strict time limit (limit-uptime).
    */
   async authorizeCustomer(params: {
     username: string;
@@ -182,56 +202,160 @@ export class MikroTikService {
     const profile = params.profile || 'default';
     const comment = params.comment || `HotspotTZ:${params.durationMinutes}m:${new Date().toISOString()}`;
 
-    console.log(`[MikroTik RB941] Authorizing user: ${params.username}, Limit-Uptime: ${limitUptime}, MAC: ${params.macAddress || 'any'}`);
+    if (this.config.demoMode) {
+      console.log(`[MikroTik DEMO] Would authorize user: ${params.username}, Limit-Uptime: ${limitUptime}, MAC: ${params.macAddress || 'any'}`);
+      return {
+        success: true,
+        username: params.username,
+        limitUptime,
+        message: `[DEMO MODE] User ${params.username} would be authorized for ${params.durationMinutes} minutes (${limitUptime}). No real router configured yet.`,
+      };
+    }
 
-    // In a live environment with RouterOS API credentials, this transmits:
-    // /ip/hotspot/user/add
-    // =name=user
-    // =password=pass
-    // =limit-uptime=1h00m00s
-    // =profile=default
-    // =comment=...
+    try {
+      await this.withConnection(async (api) => {
+        // If a user with this name already exists (e.g. a returning customer), remove
+        // it first so the time limit and usage counters start completely fresh.
+        const existing = await api.write('/ip/hotspot/user/print', [`?name=${params.username}`]);
+        if (existing.length > 0 && existing[0]['.id']) {
+          await api.write('/ip/hotspot/user/remove', [`=.id=${existing[0]['.id']}`]);
+        }
 
-    return {
-      success: true,
-      username: params.username,
-      limitUptime,
-      message: `User ${params.username} successfully authorized on MikroTik Hotspot for ${params.durationMinutes} minutes (${limitUptime}).`,
-    };
+        const addParams = [
+          `=name=${params.username}`,
+          `=password=${pass}`,
+          `=limit-uptime=${limitUptime}`,
+          `=profile=${profile}`,
+          `=comment=${comment}`,
+        ];
+        if (params.macAddress) addParams.push(`=mac-address=${params.macAddress}`);
+
+        await api.write('/ip/hotspot/user/add', addParams);
+      });
+
+      console.log(`[MikroTik] Authorized user: ${params.username}, Limit-Uptime: ${limitUptime}, MAC: ${params.macAddress || 'any'}`);
+      return {
+        success: true,
+        username: params.username,
+        limitUptime,
+        message: `User ${params.username} successfully authorized on MikroTik Hotspot for ${params.durationMinutes} minutes (${limitUptime}).`,
+      };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[MikroTik] Failed to authorize user ${params.username}:`, errorMsg);
+      return {
+        success: false,
+        username: params.username,
+        limitUptime,
+        message: `Failed to authorize ${params.username} on the real router: ${errorMsg}`,
+      };
+    }
   }
 
   /**
-   * Terminate active connection for a customer on the router
+   * Terminate active connection for a customer on the router.
    */
   async disconnectCustomer(identifier: { username?: string; macAddress?: string; ipAddress?: string }): Promise<{ success: boolean; message: string }> {
-    console.log(`[MikroTik RB941] Disconnecting customer session: ${JSON.stringify(identifier)}`);
-    // RouterOS API: /ip/hotspot/active/remove (matched by user or mac)
-    return {
-      success: true,
-      message: `Active session for ${identifier.username || identifier.macAddress || identifier.ipAddress} terminated on MikroTik.`,
-    };
+    const label = identifier.username || identifier.macAddress || identifier.ipAddress || 'unknown';
+
+    if (this.config.demoMode) {
+      console.log(`[MikroTik DEMO] Would disconnect session: ${JSON.stringify(identifier)}`);
+      return { success: true, message: `[DEMO MODE] Active session for ${label} would be terminated.` };
+    }
+
+    try {
+      await this.withConnection(async (api) => {
+        let query: string | null = null;
+        if (identifier.username) query = `?user=${identifier.username}`;
+        else if (identifier.macAddress) query = `?mac-address=${identifier.macAddress}`;
+        else if (identifier.ipAddress) query = `?address=${identifier.ipAddress}`;
+
+        if (!query) throw new Error('No username, MAC, or IP address provided to identify the session.');
+
+        const active = await api.write('/ip/hotspot/active/print', [query]);
+        for (const entry of active) {
+          if (entry['.id']) {
+            await api.write('/ip/hotspot/active/remove', [`=.id=${entry['.id']}`]);
+          }
+        }
+      });
+
+      console.log(`[MikroTik] Disconnected customer session: ${label}`);
+      return { success: true, message: `Active session for ${label} terminated on MikroTik.` };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return { success: false, message: `Failed to disconnect ${label}: ${errorMsg}` };
+    }
   }
 
   /**
-   * Expire / Disable user from hotspot users list
+   * Expire / Disable a user from the hotspot users list once their time is up.
    */
   async expireUser(username: string): Promise<{ success: boolean; message: string }> {
-    console.log(`[MikroTik RB941] Disabling expired user account: ${username}`);
-    // RouterOS API: /ip/hotspot/user/disable [find name=username]
-    return {
-      success: true,
-      message: `User ${username} expired and disabled on MikroTik RB941.`,
-    };
+    if (this.config.demoMode) {
+      console.log(`[MikroTik DEMO] Would disable expired user: ${username}`);
+      return { success: true, message: `[DEMO MODE] User ${username} would be expired and disabled.` };
+    }
+
+    try {
+      await this.withConnection(async (api) => {
+        const existing = await api.write('/ip/hotspot/user/print', [`?name=${username}`]);
+        if (existing.length > 0 && existing[0]['.id']) {
+          await api.write('/ip/hotspot/user/set', [`=.id=${existing[0]['.id']}`, '=disabled=yes']);
+        }
+        // Also drop any currently-active session for this user immediately.
+        const active = await api.write('/ip/hotspot/active/print', [`?user=${username}`]);
+        for (const entry of active) {
+          if (entry['.id']) {
+            await api.write('/ip/hotspot/active/remove', [`=.id=${entry['.id']}`]);
+          }
+        }
+      });
+
+      console.log(`[MikroTik] Disabled expired user account: ${username}`);
+      return { success: true, message: `User ${username} expired and disabled on MikroTik RB941.` };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return { success: false, message: `Failed to expire ${username}: ${errorMsg}` };
+    }
   }
 
   /**
-   * Query router status and health
+   * Query router status and health.
    */
   async getRouterStatus(): Promise<RouterInfo> {
-    return {
-      ...this.lastStatus,
-      lastChecked: new Date().toISOString(),
-    };
+    if (this.config.demoMode) {
+      return this.demoRouterInfo(true);
+    }
+    const result = await this.testConnection();
+    return result.routerInfo;
+  }
+
+  /**
+   * Raw TCP reachability probe (does NOT authenticate) - useful as a quick first check
+   * before attempting a full API login, e.g. to distinguish "wrong IP/unreachable"
+   * from "reachable but bad credentials".
+   */
+  async pingPort(): Promise<{ reachable: boolean; latencyMs: number; message: string }> {
+    const startTime = Date.now();
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      socket.setTimeout(this.config.timeoutMs || 4000);
+      socket.on('connect', () => {
+        const latency = Date.now() - startTime;
+        socket.destroy();
+        resolve({ reachable: true, latencyMs: latency, message: `Port ${this.config.port} is open on ${this.config.host}.` });
+      });
+      socket.on('timeout', () => {
+        socket.destroy();
+        resolve({ reachable: false, latencyMs: this.config.timeoutMs || 4000, message: `Timed out reaching ${this.config.host}:${this.config.port}.` });
+      });
+      socket.on('error', (err) => {
+        socket.destroy();
+        resolve({ reachable: false, latencyMs: Date.now() - startTime, message: `Socket error: ${err.message}` });
+      });
+      socket.connect(this.config.port, this.config.host);
+    });
   }
 
   /**
@@ -253,39 +377,67 @@ export class MikroTikService {
     dnsName: string;
     hotspotSubnet: string;
     gatewayIp: string;
+    apiPassword: string;
+    /** The IP the RouterOS API should be reachable from - your VPS's Tailscale
+     * address once the tunnel is set up. Leave blank to skip the restriction
+     * (not recommended once you're online for real). */
+    allowedApiSourceIp?: string;
   }): string {
+    const poolEnd = settings.hotspotSubnet.replace(/\.0\/24$/, '.254');
+    const poolStart = settings.hotspotSubnet.replace(/\.0\/24$/, '.10');
+    const apiFirewallLine = settings.allowedApiSourceIp
+      ? `add chain=input protocol=tcp dst-port=8728 src-address=${settings.allowedApiSourceIp} action=accept comment="Allow HotspotTZ server API access"\nadd chain=input protocol=tcp dst-port=8728 action=drop comment="Block all other API access"`
+      : `# NOTE: no allowedApiSourceIp was set - API is reachable from anywhere on this\n# router's local network. Once your Tailscale tunnel is set up, re-generate this\n# script with allowedApiSourceIp set to lock this down.`;
+
     return `# ====================================================================
 # HOTSPOT TZ - MIKROTIK RB941 (hAP lite) COMPLETE SETUP SCRIPT
 # RouterOS Version: v6.x / v7.x Compatible
 # Generated for: ${settings.hotspotName}
 # ====================================================================
+#
+# BEFORE RUNNING THIS: this script assumes a stock/default RB941 configuration
+# already provides: a "bridge" interface with IP ${settings.gatewayIp} assigned,
+# a DHCP server + NAT masquerade for internet sharing, and WAN internet already
+# working. If you reset the router to "none" configuration instead of the
+# default, those need to be set up first - ask if you get stuck here.
+# ====================================================================
 
-# 1. Enable RouterOS API Service for HotspotTZ Management
+# 1. Enable RouterOS API Service for HotspotTZ Management, with a real password
 /ip service enable api
 /ip service set api port=8728
+/user set [find name=admin] password="${settings.apiPassword}"
 
-# 2. Configure Hotspot User Profile (Time-based session handling)
+# 1b. Restrict who can reach the API (important once this router has any
+# internet-facing exposure)
+/ip firewall filter
+${apiFirewallLine}
+
+# 2. Create the IP pool the hotspot server hands out addresses from
+/ip pool
+add name=hs-pool ranges=${poolStart}-${poolEnd}
+
+# 3. Configure Hotspot User Profile (Time-based session handling)
 /ip hotspot profile
 add dns-name="${settings.dnsName}" hotspot-address=${settings.gatewayIp} \\
     html-directory=hotspot login-by=http-chap,http-pap,mac-cookie name=HotspotTZ-Profile \\
     rate-limit=""
 
-# 3. Configure Hotspot Server on bridge/wlan interface
+# 4. Configure Hotspot Server on bridge/wlan interface
 /ip hotspot
 add address-pool=hs-pool disabled=no interface=bridge name="${settings.hotspotName}" profile=HotspotTZ-Profile
 
-# 4. Configure Walled Garden (Allows unauthenticated customers to access Portal & Payment Gateways)
+# 5. Configure Walled Garden (Allows unauthenticated customers to reach ONLY
+# the portal server and payment gateway - nothing else. The hotspot's own
+# redirect mechanism handles capturing traffic automatically; no extra
+# broad allow-rule is needed or safe here.)
 /ip hotspot walled-garden
 add dst-host="${settings.serverHost}" comment="HotspotTZ Central Portal Server"
 add dst-host="*.pluspesa.com" comment="PlusPesa Mobile Money Gateway"
-add dst-host="admin.pluspesa.com" comment="PlusPesa Admin Portal"
+add dst-host="app.pluspesa.com" comment="PlusPesa API"
 add dst-host="*.googleapis.com" comment="Google Fonts / Assets"
 add dst-host="*.gstatic.com" comment="Google Static CDN"
 
-/ip hotspot walled-garden ip
-add dst-address=0.0.0.0/0 dst-port=80,443 action=accept server="${settings.hotspotName}" comment="Allow Captive Redirection"
-
-# 5. Set session timeout check interval
+# 6. Set session timeout check interval
 /ip hotspot user profile
 set [find default=yes] keepalive-timeout=2m idle-timeout=5m status-autorefresh=1m
 
