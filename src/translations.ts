@@ -97,7 +97,7 @@ export const translations = {
     // Branding & Header
     appName: 'HotspotTZ',
     welcomeTitle: 'Karibu Kwenye',
-    welcomeSubtitle: 'Mtandao wa Kasi na Uhakika. Chagua kifurushi cha muda hapa chini uunganishwe mara moja.',
+    welcomeSubtitle: 'Karibu kwenye WiFi yenye kasi zaidi kwa bei nafuu kabisa! Furahia intaneti bila mipaka. Kwa changamoto yoyote piga simu:',
     language: 'Lugha',
     
     // Package selection
@@ -181,6 +181,6 @@ export const translations = {
     auditLogs: 'Kumbukumbu',
     settings: 'Mipangilio',
     logout: 'Ondoka',
-    
+    demoModeBadge: 'HALI YA MAJARIBIO (DEMO)',
   }
 };
