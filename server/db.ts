@@ -283,6 +283,8 @@ class DatabaseStore {
         description: 'Quick 2-hour fast internet. Perfect for browsing and messaging.',
         status: 'active',
         popular: false,
+        mobilePaymentNotice:
+          "Kulipa kwa simu tumia Airtel Money pekee au nunua vocha kwa cash kwa wakala '[JINA LA WAKALA]', namba ya simu '[NAMBA YA SIMU]'.",
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
         updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
       },
@@ -300,7 +302,7 @@ class DatabaseStore {
         // TZS 1000 - this package needs to be paid via Airtel Money only,
         // or a cash voucher, until that changes.
         mobilePaymentNotice:
-          "Kifurushi hiki kulipa kwa simu tumia Airtel pekee au nunua vocha kwa wakala wetu '[JINA LA WAKALA]' au piga simu '[NAMBA YA SIMU]'.",
+          "Kulipa kwa simu tumia Airtel Money pekee au nunua vocha kwa cash kwa wakala '[JINA LA WAKALA]', namba ya simu '[NAMBA YA SIMU]'.",
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
         updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
       },
