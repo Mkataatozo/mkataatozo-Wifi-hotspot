@@ -1242,21 +1242,26 @@ apiRouter.get('/admin/settings', (req: Request, res: Response) => {
 });
 
 apiRouter.post('/admin/settings', (req: Request, res: Response) => {
+  // The admin form sends general settings nested under "hotspot" (along with
+  // separate "mikrotik" and "payment" sections) - read from there, not the
+  // top level of the request body.
+  const hotspot = req.body.hotspot || {};
   const {
     businessName,
     hotspotName,
-    adminCashPhone,
+    adminPhoneNumber, // the admin form's field name for the support/cash phone
+    adminCashPhone,   // accept this name too, in case it's ever sent directly
     supportPhone,
     supportWhatsApp,
     supportMessage,
     currency,
     timezone,
     defaultLanguage,
-    paymentGateway,
-  } = req.body;
+  } = hotspot;
 
   if (businessName) db.settings.businessName = businessName;
   if (hotspotName) db.settings.hotspotName = hotspotName;
+  if (adminPhoneNumber) db.settings.adminCashPhone = adminPhoneNumber;
   if (adminCashPhone) db.settings.adminCashPhone = adminCashPhone;
   if (supportPhone) db.settings.supportPhone = supportPhone;
   if (supportWhatsApp) db.settings.supportWhatsApp = supportWhatsApp;
@@ -1278,10 +1283,10 @@ apiRouter.post('/admin/settings', (req: Request, res: Response) => {
     });
   }
 
-  if (paymentGateway || req.body.payment) {
+  if (req.body.payment) {
     db.settings.paymentGateway = {
       ...db.settings.paymentGateway,
-      ...(paymentGateway || req.body.payment),
+      ...req.body.payment,
     };
   }
 
