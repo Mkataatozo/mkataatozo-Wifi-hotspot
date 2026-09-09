@@ -20,6 +20,7 @@ import {
 // password) - make sure server/data/ is in .gitignore.
 const SETTINGS_FILE = path.join(process.cwd(), 'server', 'data', 'settings.json');
 const FREE_TRIAL_FILE = path.join(process.cwd(), 'server', 'data', 'free-trial-usage.json');
+const APP_DATA_FILE = path.join(process.cwd(), 'server', 'data', 'app-data.json');
 
 /**
  * In-Memory & Supabase-Compatible Normalized Data Store for HotspotTZ Multi-Site
@@ -85,6 +86,7 @@ class DatabaseStore {
     this.loadSettingsFromDisk();
     this.loadFreeTrialUsageFromDisk();
     this.seedInitialData();
+    this.loadAppDataFromDisk();
   }
 
   /** Merges any previously-saved settings from disk over the defaults above. */
@@ -140,6 +142,47 @@ class DatabaseStore {
   public markFreeTrialUsed(mac: string) {
     this.freeTrialUsedMacs.add(mac.toUpperCase());
     this.saveFreeTrialUsageToDisk();
+  }
+
+  // --- Full business data persistence (packages, vouchers, transactions,
+  // sessions, customers, audit logs, routers) - without this, a server
+  // restart would wipe all real transaction/revenue history and customer
+  // records back to the demo seed data. ---
+
+  private loadAppDataFromDisk() {
+    try {
+      if (!fs.existsSync(APP_DATA_FILE)) return;
+      const saved = JSON.parse(fs.readFileSync(APP_DATA_FILE, 'utf-8'));
+      if (saved.packages) this.packages = new Map(saved.packages);
+      if (saved.vouchers) this.vouchers = new Map(saved.vouchers);
+      if (saved.transactions) this.transactions = new Map(saved.transactions);
+      if (saved.sessions) this.sessions = new Map(saved.sessions);
+      if (saved.customers) this.customers = new Map(saved.customers);
+      if (saved.auditLogs) this.auditLogs = saved.auditLogs;
+      if (saved.routers) this.routers = new Map(saved.routers);
+      console.log('[DB] Loaded persisted business data from server/data/app-data.json');
+    } catch (err) {
+      console.error('[DB] Failed to load persisted app data, keeping seed data:', err);
+    }
+  }
+
+  public saveAppDataToDisk() {
+    try {
+      const dir = path.dirname(APP_DATA_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const payload = {
+        packages: [...this.packages.entries()],
+        vouchers: [...this.vouchers.entries()],
+        transactions: [...this.transactions.entries()],
+        sessions: [...this.sessions.entries()],
+        customers: [...this.customers.entries()],
+        auditLogs: this.auditLogs,
+        routers: [...this.routers.entries()],
+      };
+      fs.writeFileSync(APP_DATA_FILE, JSON.stringify(payload), 'utf-8');
+    } catch (err) {
+      console.error('[DB] Failed to persist app data to disk:', err);
+    }
   }
 
   private seedInitialData() {
@@ -280,11 +323,11 @@ class DatabaseStore {
         durationValue: 2,
         durationUnit: 'hours',
         priceTzs: 200,
-        description: 'Masaa mawili ukiburudika na interent yenye kasi zaidi Tiktok, Youtube na Facebook kote unaburuza.',
+        description: 'Quick 2-hour fast internet. Perfect for browsing and messaging.',
         status: 'active',
         popular: false,
         mobilePaymentNotice:
-          "Kulipa kwa simu kwa kifurushi hiki tumia Airtel Money pekee au nunua vocha kwa wakala wetu, jina '[Bibi]', namba '0672330718'.",
+          "Kulipa kwa simu kwa kifurushi hiki tumia Airtel Money pekee au nunua vocha kwa wakala wetu, jina '[JINA LA WAKALA]', namba '0672330718'.",
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
         updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
       },
@@ -295,14 +338,14 @@ class DatabaseStore {
         durationValue: 5,
         durationUnit: 'hours',
         priceTzs: 500,
-        description: 'Masaa matano ukiburudika na interent yenye kasi zaidi Tiktok, Youtube na Facebook kote unaburuza.',
+        description: '5 hours of continuous connection. Ideal for research and streaming.',
         status: 'active',
         popular: true,
         // Many mobile money networks reject USSD/STK push requests under
         // TZS 1000 - this package needs to be paid via Airtel Money only,
         // or a cash voucher, until that changes.
         mobilePaymentNotice:
-          "Kulipa kwa simu kwa kifurushi hiki tumia Airtel Money pekee au nunua vocha kwa wakala wetu, jina '[Bibi]', namba '0672330718'.",
+          "Kulipa kwa simu kwa kifurushi hiki tumia Airtel Money pekee au nunua vocha kwa wakala wetu, jina '[JINA LA WAKALA]', namba '0672330718'.",
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
         updatedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
       },
@@ -313,7 +356,7 @@ class DatabaseStore {
         durationValue: 12,
         durationUnit: 'hours',
         priceTzs: 1000,
-        description: 'Masaa kumi na mbili ukiburudika na interent yenye kasi zaidi kwa bei yakizalendo kabisa.',
+        description: 'Half day full coverage for study or remote work sessions.',
         status: 'active',
         popular: false,
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
@@ -326,7 +369,7 @@ class DatabaseStore {
         durationValue: 24,
         durationUnit: 'hours',
         priceTzs: 1500,
-        description: 'Siku nzima (24 saa) ukiperuzi kwa internet yenye kasi zaidi.',
+        description: 'Full 24-hour day access without interruptions.',
         status: 'active',
         popular: false,
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
@@ -339,7 +382,7 @@ class DatabaseStore {
         durationValue: 50,
         durationUnit: 'hours',
         priceTzs: 2500,
-        description: 'Siku mbili ukiburudika na interent yenye kasi zaidi na kifurushi cha bei poa kabisa.',
+        description: '50 hours (about 2 days) of extended access.',
         status: 'active',
         popular: false,
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
@@ -352,7 +395,7 @@ class DatabaseStore {
         durationValue: 7,
         durationUnit: 'days',
         priceTzs: 5000,
-        description: 'Siku saba ukiburudika na interent yenye kasi zaidi na kifurushi cha bei poa kabisa.',
+        description: '7 full consecutive days of high-speed Wi-Fi hotspot access.',
         status: 'active',
         popular: false,
         createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
@@ -464,6 +507,7 @@ class DatabaseStore {
   // --- Transactions & Payments ---
   public createTransaction(tx: PaymentTransaction): PaymentTransaction {
     this.transactions.set(tx.id, tx);
+    this.saveAppDataToDisk();
     return tx;
   }
 
@@ -476,6 +520,7 @@ class DatabaseStore {
     if (!existing) return undefined;
     const updated = { ...existing, ...update };
     this.transactions.set(id, updated);
+    this.saveAppDataToDisk();
     return updated;
   }
 
@@ -504,6 +549,7 @@ class DatabaseStore {
     customer.activeSessionId = session.id;
     this.customers.set(custId, customer);
 
+    this.saveAppDataToDisk();
     return session;
   }
 
@@ -574,6 +620,7 @@ class DatabaseStore {
       this.vouchers.set(voucher.id, voucher);
       created.push(voucher);
     }
+    this.saveAppDataToDisk();
     return created;
   }
 
@@ -588,6 +635,7 @@ class DatabaseStore {
 
   public createRouter(router: MikroTikRouter): MikroTikRouter {
     this.routers.set(router.id, router);
+    this.saveAppDataToDisk();
     return router;
   }
 
@@ -596,11 +644,14 @@ class DatabaseStore {
     if (!existing) return undefined;
     const updated = { ...existing, ...update };
     this.routers.set(id, updated);
+    this.saveAppDataToDisk();
     return updated;
   }
 
   public deleteRouter(id: string): boolean {
-    return this.routers.delete(id);
+    const result = this.routers.delete(id);
+    if (result) this.saveAppDataToDisk();
+    return result;
   }
 
   // --- Payment Diagnostics Logging ---
@@ -629,6 +680,7 @@ class DatabaseStore {
     if (this.auditLogs.length > 1000) {
       this.auditLogs.pop();
     }
+    this.saveAppDataToDisk();
     return log;
   }
 

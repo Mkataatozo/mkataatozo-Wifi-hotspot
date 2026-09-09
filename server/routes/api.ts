@@ -573,6 +573,7 @@ apiRouter.post('/vouchers/redeem', async (req: Request, res: Response) => {
 
     // 3. Mark Voucher as Used
     voucher.status = 'used';
+    db.saveAppDataToDisk();
     voucher.usedAt = startTime.toISOString();
     voucher.usedByPhone = phoneNumber;
     voucher.usedByMac = mac;
@@ -791,6 +792,7 @@ apiRouter.post('/admin/packages', (req: Request, res: Response) => {
   };
 
   db.packages.set(pkg.id, pkg);
+  db.saveAppDataToDisk();
   db.logAudit({
     adminEmail: (req.headers['x-admin-email'] as string) || 'admin',
     action: 'CREATE_PACKAGE',
@@ -839,6 +841,7 @@ apiRouter.delete('/admin/packages/:id', (req: Request, res: Response) => {
   if (!pkg) return res.status(404).json({ error: 'Package not found' });
 
   db.packages.delete(id);
+  db.saveAppDataToDisk();
   db.logAudit({
     adminEmail: (req.headers['x-admin-email'] as string) || 'admin',
     action: 'DELETE_PACKAGE',
@@ -890,6 +893,7 @@ apiRouter.put('/admin/vouchers/:id/disable', (req: Request, res: Response) => {
   if (!voucher) return res.status(404).json({ error: 'Voucher not found' });
 
   voucher.status = voucher.status === 'disabled' ? 'available' : 'disabled';
+  db.saveAppDataToDisk();
   db.logAudit({
     adminEmail: (req.headers['x-admin-email'] as string) || 'admin',
     action: 'TOGGLE_VOUCHER',
