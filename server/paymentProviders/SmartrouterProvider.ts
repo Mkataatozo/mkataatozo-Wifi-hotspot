@@ -5,9 +5,9 @@ import {
   PaymentStatusResponse,
   WebhookResult,
   PaymentProviderConfig,
-} from './PaymentProvider.ts';
-import { ClickPesaProvider } from './ClickPesaProvider.ts';
-import { PlusPesaProvider } from './PlusPesaProvider.ts';
+} from './PaymentProvider.js';
+import { ClickPesaProvider } from './ClickPesaProvider.js';
+import { PlusPesaProvider } from './PlusPesaProvider.js';
 
 /**
  * Smart Router - automatically picks the best mobile money gateway for each

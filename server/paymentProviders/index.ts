@@ -1,7 +1,7 @@
-import { PaymentProvider, PaymentProviderConfig } from './PaymentProvider.ts';
-import { PlusPesaProvider } from './PlusPesaProvider.ts';
-import { ClickPesaProvider } from './ClickPesaProvider.ts';
-import { SmartRouterProvider } from './SmartRouterProvider.ts';
+import { PaymentProvider, PaymentProviderConfig } from './PaymentProvider.js';
+import { PlusPesaProvider } from './PlusPesaProvider.js';
+import { ClickPesaProvider } from './ClickPesaProvider.js';
+import { SmartRouterProvider } from './SmartRouterProvider.js';
 
 const providers: Record<string, PaymentProvider> = {
   pluspesa: new PlusPesaProvider(),
@@ -25,7 +25,7 @@ export function getAllAvailableProviders(): Array<{ id: string; name: string }> 
   }));
 }
 
-export * from './PaymentProvider.ts';
-export * from './PlusPesaProvider.ts';
-export * from './ClickPesaProvider.ts';
-export * from './SmartRouterProvider.ts';
+export * from './PaymentProvider.js';
+export * from './PlusPesaProvider.js';
+export * from './ClickPesaProvider.js';
+export * from './SmartRouterProvider.js';
