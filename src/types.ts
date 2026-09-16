@@ -18,7 +18,7 @@ export type RouterStatus = 'connected' | 'disconnected' | 'error';
 
 export type TimeUnit = 'minutes' | 'hours' | 'days';
 
-export type PaymentGatewayProvider = 'pluspesa' | 'demo';
+export type PaymentGatewayProvider = 'pluspesa' | 'clickpesa' | 'auto' | 'demo';
 
 export interface TimePackage {
   id: string;
@@ -182,6 +182,25 @@ export interface PaymentGatewayConfig {
   apiUrl?: string;
   webhookSecret?: string;
   callbackUrl?: string;
+  /**
+   * Per-gateway credentials. Lets PlusPesa and ClickPesa both hold their own
+   * keys at the same time, which is what makes automatic A -> B switching
+   * possible. The flat fields above stay for backwards compatibility and are
+   * treated as the PlusPesa credentials when clickpesa/pluspesa blocks are
+   * absent.
+   */
+  clickpesa?: {
+    clientId?: string;   // ClickPesa "Client ID"
+    apiKey?: string;     // ClickPesa "API Key"
+    apiUrl?: string;
+    enabled?: boolean;
+  };
+  pluspesa?: {
+    publicKey?: string;
+    secretKey?: string;
+    apiUrl?: string;
+    enabled?: boolean;
+  };
 }
 
 export interface HotspotSettings {
@@ -227,6 +246,24 @@ export interface SystemSettings {
     webhookUrl: string;
     environment: 'sandbox' | 'live';
     enabled: boolean;
+    // Live credentials actually used at request time.
+    apiKey?: string;
+    publicKey?: string;
+    apiSecret?: string;
+    secretKey?: string;
+    // Per-gateway blocks enabling automatic ClickPesa <-> PlusPesa switching.
+    clickpesa?: {
+      clientId?: string;
+      apiKey?: string;
+      apiUrl?: string;
+      enabled?: boolean;
+    };
+    pluspesa?: {
+      publicKey?: string;
+      secretKey?: string;
+      apiUrl?: string;
+      enabled?: boolean;
+    };
   };
   mikrotik: {
     host: string;

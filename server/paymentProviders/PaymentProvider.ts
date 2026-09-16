@@ -58,6 +58,22 @@ export interface PaymentProviderConfig {
   webhookSecret?: string;
   environment?: 'sandbox' | 'live';
   enabled?: boolean;
+  /**
+   * Per-gateway credential blocks. Keeping each gateway's keys separate is
+   * what allows both to be configured at once and switched automatically.
+   */
+  clickpesa?: {
+    clientId?: string;
+    apiKey?: string;
+    apiUrl?: string;
+    enabled?: boolean;
+  };
+  pluspesa?: {
+    publicKey?: string;
+    secretKey?: string;
+    apiUrl?: string;
+    enabled?: boolean;
+  };
 }
 
 export interface PaymentProvider {

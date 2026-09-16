@@ -191,7 +191,11 @@ apiRouter.post('/payments/initiate', async (req: Request, res: Response) => {
     // Log live diagnostic
     db.logPaymentDiagnostic({
       type: 'initiate',
-      provider: provider.name,
+      // Show the gateway that actually handled it (the router may have
+      // switched), falling back to the configured provider's name.
+      provider: initResult.provider && initResult.provider !== provider.id
+        ? `${provider.name} -> ${initResult.provider}`
+        : provider.name,
       phoneNumber: cleanPhone,
       amountTzs: pkg.priceTzs,
       transactionId,
@@ -212,8 +216,12 @@ apiRouter.post('/payments/initiate', async (req: Request, res: Response) => {
       });
     }
 
+    // IMPORTANT: when the smart router is active, the gateway that actually
+    // handled this payment may differ from the configured one. Persist the
+    // real gateway so status polling and webhooks go back to the same place.
     db.updateTransaction(transactionId, {
       gatewayTransactionId: initResult.gatewayTransactionId,
+      paymentGateway: (initResult.provider as PaymentTransaction['paymentGateway']) || tx.paymentGateway,
       gatewayResponseRef: JSON.stringify(initResult.rawResponse || {}),
     });
 

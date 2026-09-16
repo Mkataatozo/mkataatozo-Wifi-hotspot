@@ -64,14 +64,29 @@ class DatabaseStore {
       timezone: 'Africa/Dar_es_Salaam',
       defaultLanguage: 'en',
       paymentGateway: {
-        provider: 'pluspesa',
+        // 'auto' = smart router: ClickPesa for TZS 500+ on every network,
+        // PlusPesa as automatic fallback. Set to 'clickpesa' or 'pluspesa'
+        // to force a single gateway.
+        provider: 'auto',
         apiKeyMasked: '••••••••••••pluspesa_public',
         secretKeyMasked: '••••••••••••pluspesa_secret',
         merchantId: '',
-        apiUrl: 'https://app.pluspesa.com/api/v1',
-        webhookUrl: '/api/payments/webhook/pluspesa',
+        apiUrl: 'https://api.pluspesa.com/api/v1',
+        webhookUrl: '/api/payments/webhook/auto',
         environment: 'live',
         enabled: true,
+        clickpesa: {
+          clientId: process.env.CLICKPESA_CLIENT_ID || '',
+          apiKey: process.env.CLICKPESA_API_KEY || '',
+          apiUrl: 'https://api.clickpesa.com/third-parties',
+          enabled: true,
+        },
+        pluspesa: {
+          publicKey: process.env.PAYMENT_GATEWAY_PUBLIC_KEY || '',
+          secretKey: process.env.PAYMENT_GATEWAY_SECRET_KEY || '',
+          apiUrl: 'https://api.pluspesa.com/api/v1',
+          enabled: true,
+        },
       },
       mikrotik: {
         host: process.env.MIKROTIK_HOST || '192.168.88.1',
